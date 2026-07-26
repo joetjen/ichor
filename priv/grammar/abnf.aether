@@ -1,0 +1,40 @@
+@grammar "abnf"
+@root rulelist
+@noskip
+
+; ---- tokens ----
+DEFINED_AS    := "=/" | "="
+SLASH         := "/"
+LPAREN        := "("
+RPAREN        := ")"
+LBRACKET      := "["
+RBRACKET      := "]"
+STAR          := "*"
+CRLF          := "\r\n"
+WSP           := [ \t]
+RULENAME      := ALPHA (ALNUM | "-")*
+CASE_SENS     := "%s"
+CASE_INSENS   := "%i"
+BIT           := [01]
+QUOTED_STRING := (CASE_SENS | CASE_INSENS)? "\"" (!"\"" .)* "\""
+PROSE_VAL     := "<" (!">" .)* ">"
+COMMENT       := ";" (!"\r" !"\n" .)*
+HEX_VAL       := "%x" (HEX+) (("." (HEX+))+ | ("-" (HEX+)))?
+BIN_VAL       := "%b" (BIT+) (("." (BIT+))+ | ("-" (BIT+)))?
+DEC_VAL       := "%d" (DIGIT+) (("." (DIGIT+))+ | ("-" (DIGIT+)))?
+
+; ---- rules ----
+rulelist      := (rule | blank_line)+
+blank_line    := WSP* COMMENT? CRLF
+rule          := RULENAME WSP* DEFINED_AS WSP* elements CRLF
+elements      := alternation WSP*
+alternation   := concatenation (WSP* SLASH WSP* concatenation)*
+concatenation := repetition (WSP+ repetition)*
+repetition    := repeat? element
+repeat        := (min:(DIGIT*) STAR max:(DIGIT*)) | DIGIT+
+element       := rulename_ref | group | option | char_val | HEX_VAL | BIN_VAL | DEC_VAL | prose_val
+rulename_ref  := RULENAME
+group         := LPAREN WSP* alternation WSP* RPAREN
+option        := LBRACKET WSP* alternation WSP* RBRACKET
+char_val      := QUOTED_STRING
+prose_val     := PROSE_VAL

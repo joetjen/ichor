@@ -1,0 +1,36 @@
+@grammar "lisp"
+@root form
+@skip TRIVIA
+
+LPAREN       := "("
+RPAREN       := ")"
+LBRACKET     := "["
+RBRACKET     := "]"
+LBRACE       := "{"
+RBRACE       := "}"
+QUOTE        := "'"
+BACKTICK     := "`"
+TILDE_AT     := "~@"
+TILDE        := "~"
+CARET        := "^"
+SYMBOL_START := [[:alpha:]_+\-*/<>=!?]
+SYMBOL_CHAR  := [[:alnum:]_+\-*/<>=!?]
+SYMBOL       := SYMBOL_START SYMBOL_CHAR*
+KEYWORD      := ":" SYMBOL
+STRING       := "\"" (!"\"" .)* "\""
+NUMBER       := "-"? DIGIT+ ("." DIGIT+)?
+COMMENT      := ";" (!"\n" .)* "\n"?
+SPACE        := [ \t\n,]+
+TRIVIA       := (SPACE | COMMENT)*
+
+form                  := list | vector | map | reader_macro | atom
+list                  := LPAREN form* RPAREN
+vector                := LBRACKET form* RBRACKET
+map                   := LBRACE (form form)* RBRACE
+reader_macro          := quote_sugar | quasiquote_sugar | unquote_splice_sugar | unquote_sugar | meta_sugar
+quote_sugar           := QUOTE form
+quasiquote_sugar      := BACKTICK form
+unquote_splice_sugar  := TILDE_AT form
+unquote_sugar         := TILDE form
+meta_sugar            := CARET meta:form target:form
+atom                  := SYMBOL | KEYWORD | STRING | NUMBER

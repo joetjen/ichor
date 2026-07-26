@@ -1,0 +1,25 @@
+@grammar "markdown"
+@root document
+@noskip
+
+HASH       := "#"
+DASH       := "-"
+STAR2      := "**"
+LBRACKET   := "["
+RBRACKET   := "]"
+LPAREN     := "("
+RPAREN     := ")"
+NEWLINE    := "\n"
+PLAIN_CHAR := !("*" | "[" | "\n") .
+
+document  := block (NEWLINE+ block)*
+block     := heading | list | paragraph
+heading   := level:HASH+ PLAIN_CHAR inline
+list      := item (NEWLINE item)*
+item      := DASH PLAIN_CHAR inline
+paragraph := inline (NEWLINE !NEWLINE inline)*
+inline    := segment*
+segment   := bold | link | plain
+bold      := STAR2 inline STAR2
+link      := LBRACKET inline RBRACKET LPAREN url:PLAIN_CHAR* RPAREN
+plain     := PLAIN_CHAR+

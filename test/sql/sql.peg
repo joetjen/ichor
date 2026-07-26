@@ -1,0 +1,19 @@
+alpha_char    <- [a-zA-Z]
+digit_char    <- [0-9]
+select        <- "SELECT"
+from          <- "FROM"
+where         <- "WHERE"
+ident         <- (alpha_char / "_") (alpha_char / digit_char / "_")*
+str_char      <- [ -&(-~]
+string        <- "'" str_char* "'"
+number        <- digit_char+
+sp            <- (" ")*
+
+select_stmt   <- select sp column_list sp from sp table_ref (sp where_clause)?
+column_list   <- column (sp "," sp column)*
+column        <- "*" / ident
+table_ref     <- ident
+where_clause  <- where sp condition
+condition     <- ident sp comparison_op sp literal
+comparison_op <- "<=" / ">=" / "!=" / "=" / "<" / ">"
+literal       <- string / number

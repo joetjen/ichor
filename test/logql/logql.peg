@@ -1,0 +1,20 @@
+alpha_char  <- [a-zA-Z]
+digit_char  <- [0-9]
+line_format <- "line_format"
+logfmt      <- "logfmt"
+json        <- "json"
+ident       <- (alpha_char / "_") (alpha_char / digit_char / "_")*
+str_char    <- [ !#-~]
+string      <- '"' str_char* '"'
+sp          <- (" ")*
+
+query             <- stream_selector (sp pipeline_stage)*
+stream_selector   <- "{" sp label_matcher sp ("," sp label_matcher sp)* "}"
+label_matcher     <- ident sp match_op sp string
+match_op          <- "=~" / "!~" / "!=" / "="
+pipeline_stage    <- filter_expr / ("|" sp (line_format_stage / logfmt_stage / json_stage))
+filter_expr       <- filter_op sp string
+filter_op         <- "|=" / "!~" / "|~" / "!="
+line_format_stage <- line_format sp string
+logfmt_stage      <- logfmt
+json_stage        <- json

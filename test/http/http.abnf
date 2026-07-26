@@ -1,0 +1,12 @@
+method       = "GET" / "POST" / "PUT" / "DELETE" / "HEAD" / "OPTIONS" / "PATCH"
+sp           = " "
+digit-char   = %x30-39
+http-version = "HTTP/" digit-char "." digit-char
+crlf         = %x0D.0A
+colon        = ":"
+word         = 1*(%x21-39 / %x3B-7E)
+
+request      = request-line *header crlf [body]
+request-line = method sp word sp http-version crlf
+header       = word colon *sp word *(1*sp word) crlf
+body         = *(word / sp / colon / crlf)

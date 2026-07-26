@@ -1,0 +1,35 @@
+@grammar "regex"
+@root pattern
+@noskip
+
+LOOKAHEAD_POS   := "(?="
+LOOKAHEAD_NEG   := "(?!"
+LPAREN          := "("
+RPAREN          := ")"
+LBRACKET        := "["
+RBRACKET        := "]"
+CARET           := "^"
+DASH            := "-"
+STAR            := "*"
+PLUS            := "+"
+QUESTION        := "?"
+PIPE            := "|"
+LBRACE          := "{"
+RBRACE          := "}"
+COMMA           := ","
+DOT             := "."
+SHORTHAND_CLASS := "\\d" | "\\w" | "\\s" | "\\D" | "\\W" | "\\S"
+ESCAPED_CHAR    := "\\" [.\[\]\^\-*+?|(){}\\/dwsDWSnrt]
+LITERAL_CHAR    := !("(" | ")" | "[" | "]" | "^" | "*" | "+" | "?" | "|" | "{" | "}" | "\\" | ".") .
+
+pattern     := alternative (PIPE alternative)*
+alternative := term*
+term        := atom quantifier?
+quantifier  := STAR | PLUS | QUESTION | bound
+bound       := LBRACE min:(LITERAL_CHAR+) (COMMA max:(LITERAL_CHAR*))? RBRACE
+atom        := group | char_class | DOT | SHORTHAND_CLASS | ESCAPED_CHAR | LITERAL_CHAR
+group       := (LOOKAHEAD_POS | LOOKAHEAD_NEG | LPAREN) pattern RPAREN
+char_class  := LBRACKET CARET? class_item+ RBRACKET
+class_item  := range | class_atom
+range       := from:class_atom DASH to:class_atom
+class_atom  := ESCAPED_CHAR | LITERAL_CHAR

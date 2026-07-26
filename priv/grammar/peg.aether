@@ -1,0 +1,33 @@
+@grammar "peg"
+@root grammar_file
+@skip TRIVIA
+
+; ---- tokens ----
+ARROW      := "<-"
+SLASH      := "/"
+AMP        := "&"
+BANG       := "!"
+QUESTION   := "?"
+STAR       := "*"
+PLUS       := "+"
+LPAREN     := "("
+RPAREN     := ")"
+DOT        := "."
+IDENT      := ALPHA (ALNUM | "_")*
+SQ_TERMINAL := "'" (!"'" .)* "'"
+DQ_TERMINAL := "\"" (!"\"" .)* "\""
+CHAR_CLASS := "[" "^"? (!"]" .)* "]"
+COMMENT    := "#" (!"\n" .)*
+SP         := [ \t\n\r]+
+TRIVIA     := (SP | COMMENT)*
+
+; ---- rules ----
+grammar_file := TRIVIA? rule+ TRIVIA?
+rule         := IDENT ARROW expression
+expression   := sequence (SLASH sequence)*
+sequence     := prefix*
+prefix       := (AMP | BANG)? suffix
+suffix       := primary (QUESTION | STAR | PLUS)?
+primary      := (IDENT !ARROW) | (LPAREN expression RPAREN) | literal | char_class | DOT
+literal      := SQ_TERMINAL | DQ_TERMINAL
+char_class   := CHAR_CLASS

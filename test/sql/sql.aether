@@ -1,0 +1,28 @@
+@grammar "sql"
+@root select_stmt
+@case_insensitive
+
+SELECT := "SELECT"
+FROM   := "FROM"
+WHERE  := "WHERE"
+STAR   := "*"
+COMMA  := ","
+EQ     := "="
+NEQ    := "!="
+LE     := "<="
+GE     := ">="
+LT     := "<"
+GT     := ">"
+IDENT  := [[:alpha:]_][[:alnum:]_]*
+STRING := /'[^']*'/
+NUMBER := /\d+/
+SPACE  := [ \t\n]+
+
+select_stmt   := SELECT column_list FROM table_ref where_clause?
+column_list   := column (COMMA column)*
+column        := STAR | IDENT
+table_ref     := IDENT
+where_clause  := WHERE condition
+condition     := IDENT comparison_op literal
+comparison_op := EQ | NEQ | LE | GE | LT | GT
+literal       := STRING | NUMBER

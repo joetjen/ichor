@@ -1,0 +1,37 @@
+@grammar "ebnf-w3c"
+@root grammar_file
+@skip TRIVIA
+
+; ---- tokens ----
+DEFINED_AS      := "::="
+BAR             := "|"
+QUESTION        := "?"
+STAR            := "*"
+PLUS            := "+"
+DASH            := "-"
+LPAREN          := "("
+RPAREN          := ")"
+IDENT           := ALPHA (ALNUM | "_")*
+SQ_TERMINAL     := "'" (!"'" .)* "'"
+DQ_TERMINAL     := "\"" (!"\"" .)* "\""
+HEX_REF         := "#x" HEX+
+CHAR_CLASS      := "[" "^"? (!"]" .)* "]"
+COMMENT_OPEN    := "/*"
+COMMENT_CLOSE   := "*/"
+COMMENT_TEXT    := (!"*/" .)*
+COMMENT         := COMMENT_OPEN COMMENT_TEXT COMMENT_CLOSE
+SP              := [ \t]+
+NEWLINE         := "\r\n" | "\n"
+TRIVIA          := (SP | COMMENT)*
+
+; ---- rules ----
+grammar_file := TRIVIA? NEWLINE* rule (NEWLINE+ rule)* NEWLINE*
+rule         := IDENT DEFINED_AS expression
+expression   := sequence (BAR sequence)*
+sequence     := term (DASH term)?
+term         := factor+
+factor       := primary (QUESTION | STAR | PLUS)?
+primary      := (LPAREN expression RPAREN) | literal | char_class | hex_ref | IDENT
+literal      := SQ_TERMINAL | DQ_TERMINAL
+char_class   := CHAR_CLASS
+hex_ref      := HEX_REF

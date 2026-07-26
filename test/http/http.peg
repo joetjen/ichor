@@ -1,0 +1,14 @@
+digit_char   <- [0-9]
+method       <- "GET" / "POST" / "PUT" / "DELETE" / "HEAD" / "OPTIONS" / "PATCH"
+sp           <- " "
+http_version <- "HTTP/" digit_char "." digit_char
+crlf         <- "
+"
+colon        <- ":"
+word_char    <- [!-9;-~]
+word         <- word_char+
+
+request      <- request_line header* crlf body?
+request_line <- method sp word sp http_version crlf
+header       <- word colon sp* word (sp+ word)* crlf
+body         <- (word / sp / colon / crlf)*

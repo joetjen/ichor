@@ -1,0 +1,20 @@
+alpha_char   <- [a-zA-Z]
+digit_char   <- [0-9]
+sp           <- [ ,]
+ws           <- sp*
+symbol_start <- alpha_char / "_" / "+" / "-" / "*" / "/" / "<" / ">" / "=" / "!" / "?"
+symbol       <- symbol_start (symbol_start / digit_char)*
+keyword      <- ":" symbol
+str_char     <- [ !#-~]
+string       <- '"' str_char* '"'
+number       <- "-"? digit_char+ ("." digit_char+)?
+atom         <- number / symbol / keyword / string
+form         <- list / vec / map / quote_sugar / quasiquote_sugar / unquote_splice_sugar / unquote_sugar / meta_sugar / atom
+list         <- "(" ws (form ws)* ")"
+vec          <- "[" ws (form ws)* "]"
+map          <- "{" ws (form ws form ws)* "}"
+quote_sugar          <- "'" ws form
+quasiquote_sugar     <- "`" ws form
+unquote_splice_sugar <- "~@" ws form
+unquote_sugar        <- "~" ws form
+meta_sugar           <- "^" ws form ws form

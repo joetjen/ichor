@@ -1,0 +1,21 @@
+alpha-char   = %x41-5A / %x61-7A
+digit-char   = %x30-39
+dquote       = %x22
+sp           = %x20 / %x09 / %x0A / ","
+ws           = *sp
+symbol-start = alpha-char / "_" / "+" / "-" / "*" / "/" / "<" / ">" / "=" / "!" / "?"
+symbol       = symbol-start *(symbol-start / digit-char)
+keyword      = ":" symbol
+str-char     = %x20-21 / %x23-7E
+string       = dquote *str-char dquote
+number       = ["-"] 1*digit-char ["." 1*digit-char]
+atom         = number / symbol / keyword / string
+form         = list / vec / map / quote-sugar / quasiquote-sugar / unquote-splice-sugar / unquote-sugar / meta-sugar / atom
+list         = "(" ws *(form ws) ")"
+vec          = "[" ws *(form ws) "]"
+map          = "{" ws *(form ws form ws) "}"
+quote-sugar          = "'" ws form
+quasiquote-sugar     = "`" ws form
+unquote-splice-sugar = "~@" ws form
+unquote-sugar        = "~" ws form
+meta-sugar           = "^" ws form ws form

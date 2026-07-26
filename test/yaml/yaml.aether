@@ -1,0 +1,20 @@
+@grammar "yaml"
+@root document
+@skip INLINE_WS
+
+COLON      := ":"
+DASH       := "-"
+NEWLINE    := "\n"
+INLINE_WS  := [ \t]*
+SCALAR     := (!(" " | "\t" | "\n" | ("-" (" " | "\n")) | (":" (" " | "\n"))) .) (!("\n" | (":" (" " | "\n"))) .)*
+
+document      := (root_mapping | root_sequence | scalar_doc) NEWLINE*
+root_mapping  := @indent( mapping )
+mapping       := pair (NEWLINE @samecol pair)*
+pair          := SCALAR COLON (inline_value | NEWLINE @indent(block_value))
+inline_value  := SCALAR
+block_value   := mapping | sequence | scalar_doc
+root_sequence := @indent( sequence )
+sequence      := item (NEWLINE @samecol item)*
+item          := DASH (root_mapping | scalar_doc)
+scalar_doc    := SCALAR

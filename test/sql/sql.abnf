@@ -1,0 +1,20 @@
+alpha-char = %x41-5A / %x61-7A
+digit-char = %x30-39
+select     = "SELECT"
+from       = "FROM"
+where      = "WHERE"
+ident      = (alpha-char / "_") *(alpha-char / digit-char / "_")
+squote     = %x27
+str-char   = %x20-26 / %x28-7E
+string     = squote *str-char squote
+number     = 1*digit-char
+sp         = *(%x20 / %x09)
+
+select-stmt   = select sp column-list sp from sp table-ref [sp where-clause]
+column-list   = column *(sp "," sp column)
+column        = "*" / ident
+table-ref     = ident
+where-clause  = where sp condition
+condition     = ident sp comparison-op sp literal
+comparison-op = "<=" / ">=" / "!=" / "=" / "<" / ">"
+literal       = string / number

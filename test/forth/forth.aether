@@ -1,0 +1,11 @@
+@grammar "forth"
+@root program
+
+COLON     := ":"
+SEMI      := ";"
+NUMBER    := /-?\d+/
+WORD_NAME := (!":" !";" !SPACE .)+
+
+program    := form*
+form       := definition | NUMBER | WORD_NAME
+definition := COLON WORD_NAME form* SEMI

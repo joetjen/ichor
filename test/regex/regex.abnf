@@ -1,0 +1,17 @@
+lookahead-pos   = "(?="
+lookahead-neg   = "(?!"
+shorthand-class = "\" (%s"d" / %s"w" / %s"s" / %s"D" / %s"W" / %s"S")
+escaped-char    = "\" ("." / "[" / "]" / "^" / "-" / "*" / "+" / "?" / "|" / "(" / ")" / "{" / "}" / "\" / "/" / %s"d" / %s"w" / %s"s" / %s"D" / %s"W" / %s"S" / %s"n" / %s"r" / %s"t")
+literal-char    = %x20-27 / %x2D / %x2F-3E / %x40-5A / %x5F-60 / %x61-7A / %x7E
+
+pattern     = alternative *("|" alternative)
+alternative = *term
+term        = atom [quantifier]
+quantifier  = "*" / "+" / "?" / bound
+bound       = "{" 1*literal-char ["," *literal-char] "}"
+atom        = group / char-class / "." / shorthand-class / escaped-char / literal-char
+group       = (lookahead-pos / lookahead-neg / "(") pattern ")"
+char-class  = "[" ["^"] 1*class-item "]"
+class-item  = range / class-atom
+range       = class-atom "-" class-atom
+class-atom  = escaped-char / literal-char

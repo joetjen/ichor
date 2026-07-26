@@ -1,0 +1,17 @@
+lookahead_pos   <- "(?="
+lookahead_neg   <- "(?!"
+shorthand_class <- '\' ('d' / 'w' / 's' / 'D' / 'W' / 'S')
+escaped_char    <- '\' ('.' / '[' / ']' / '^' / '-' / '*' / '+' / '?' / '|' / '(' / ')' / '{' / '}' / '\' / '/' / 'd' / 'w' / 's' / 'D' / 'W' / 'S' / 'n' / 'r' / 't')
+literal_char    <- [ !"#$%&'/0-9:;<=>@-Z_-`a-z~-]
+
+pattern     <- alternative ("|" alternative)*
+alternative <- term*
+term        <- atom quantifier?
+quantifier  <- "*" / "+" / "?" / bound
+bound       <- "{" literal_char+ ("," literal_char*)? "}"
+atom        <- group / char_class / "." / shorthand_class / escaped_char / literal_char
+group       <- (lookahead_pos / lookahead_neg / "(") pattern ")"
+char_class  <- "[" "^"? class_item+ "]"
+class_item  <- range / class_atom
+range       <- class_atom "-" class_atom
+class_atom  <- escaped_char / literal_char

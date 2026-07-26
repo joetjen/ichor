@@ -1,0 +1,22 @@
+alpha-char  = %x41-5A / %x61-7A
+digit-char  = %x30-39
+line-format = "line_format"
+logfmt      = "logfmt"
+json        = "json"
+ident       = (alpha-char / "_") *(alpha-char / digit-char / "_")
+dquote      = %x22
+str-char    = %x20-21 / %x23-7E
+string      = dquote *str-char dquote
+wschar      = %x20 / %x09
+sp          = *wschar
+
+query             = stream-selector *(sp pipeline-stage)
+stream-selector   = "{" sp label-matcher sp *("," sp label-matcher sp) "}"
+label-matcher     = ident sp match-op sp string
+match-op          = "=~" / "!~" / "!=" / "="
+pipeline-stage    = filter-expr / ("|" sp (line-format-stage / logfmt-stage / json-stage))
+filter-expr       = filter-op sp string
+filter-op         = "|=" / "!~" / "|~" / "!="
+line-format-stage = line-format sp string
+logfmt-stage      = logfmt
+json-stage        = json

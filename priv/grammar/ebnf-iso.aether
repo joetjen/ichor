@@ -1,0 +1,45 @@
+@grammar "ebnf-iso"
+@root syntax
+@skip TRIVIA
+
+; ---- tokens ----
+EQUALS        := "="
+SEMI          := ";"
+BAR           := "|"
+COMMA         := ","
+DASH          := "-"
+LBRACKET      := "["
+RBRACKET      := "]"
+LBRACE        := "{"
+RBRACE        := "}"
+LPAREN        := "("
+RPAREN        := ")"
+STAR          := "*"
+SPECIAL_MARK  := "?"
+IDENT         := ALPHA (ALNUM | " ")*
+SQ_TERMINAL   := "'" (!"'" .)* "'"
+DQ_TERMINAL   := "\"" (!"\"" .)* "\""
+SPECIAL_SEQ   := "?" (!"?" .)* "?"
+COMMENT_OPEN  := "(*"
+COMMENT_CLOSE := "*)"
+COMMENT_TEXT  := (!"*)" .)*
+COMMENT       := COMMENT_OPEN COMMENT_TEXT COMMENT_CLOSE
+SP            := [ \t\n\r]+
+TRIVIA        := (SP | COMMENT)*
+
+; ---- rules ----
+syntax             := TRIVIA? syntax_rule+ TRIVIA?
+syntax_rule        := meta_identifier EQUALS definitions_list SEMI
+definitions_list   := single_definition (BAR single_definition)*
+single_definition  := (term (COMMA term)*)?
+term               := factor (DASH exception)?
+exception          := factor
+factor             := (repeat_count STAR)? primary
+repeat_count       := DIGIT+
+primary            := optional_seq | repeated_seq | grouped_seq | meta_identifier | terminal_string | special_sequence
+optional_seq       := LBRACKET definitions_list RBRACKET
+repeated_seq       := LBRACE definitions_list RBRACE
+grouped_seq        := LPAREN definitions_list RPAREN
+terminal_string    := SQ_TERMINAL | DQ_TERMINAL
+meta_identifier    := IDENT
+special_sequence   := SPECIAL_SEQ

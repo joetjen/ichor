@@ -1,0 +1,24 @@
+@grammar "bnf"
+@root grammar_file
+@skip TRIVIA
+
+; ---- tokens ----
+NONTERM_OPEN  := "<"
+NONTERM_CLOSE := ">"
+DEFINED_AS    := "::="
+BAR           := "|"
+NONTERM_NAME  := (ALPHA | DIGIT | "-" | "_")+
+SQ_TERMINAL   := "'" (!"'" .)* "'"
+DQ_TERMINAL   := "\"" (!"\"" .)* "\""
+SP      := [ \t]+
+NEWLINE := "\r\n" | "\n"
+TRIVIA  := SP*
+
+; ---- rules ----
+grammar_file := rule (NEWLINE+ rule)* NEWLINE*
+rule         := nonterminal DEFINED_AS alternatives
+alternatives := sequence (BAR sequence)*
+sequence     := element+
+element      := nonterminal | terminal
+nonterminal  := NONTERM_OPEN NONTERM_NAME NONTERM_CLOSE
+terminal     := SQ_TERMINAL | DQ_TERMINAL

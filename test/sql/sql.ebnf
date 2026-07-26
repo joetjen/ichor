@@ -1,0 +1,19 @@
+alpha char = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" ;
+digit char = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+select     = "SELECT" ;
+from       = "FROM" ;
+where      = "WHERE" ;
+ident      = (alpha char | "_"), { alpha char | digit char | "_" } ;
+str char   = alpha char | digit char | " " ;
+string     = "'", { str char }, "'" ;
+number     = digit char, { digit char } ;
+sp         = { " " } ;
+
+select stmt   = select, sp, column list, sp, from, sp, table ref, [ sp, where clause ] ;
+column list   = column, { sp, ",", sp, column } ;
+column        = "*" | ident ;
+table ref     = ident ;
+where clause  = where, sp, condition ;
+condition     = ident, sp, comparison op, sp, literal ;
+comparison op  = "<=" | ">=" | "!=" | "=" | "<" | ">" ;
+literal       = string | number ;

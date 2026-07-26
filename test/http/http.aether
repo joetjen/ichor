@@ -1,0 +1,17 @@
+@grammar "http"
+@root request
+@noskip
+
+METHOD       := "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH"
+SP           := " "
+HTTP_VERSION := "HTTP/" DIGIT "." DIGIT
+CRLF         := "\r\n"
+COLON        := ":"
+WORD         := (!" " !":" !"\r" !"\n" .)+
+
+request := request_line header* CRLF body?
+
+request_line := METHOD SP uri:WORD SP HTTP_VERSION CRLF
+
+header := name:WORD COLON SP* value:(WORD (SP+ WORD)*) CRLF
+body   := content:((WORD | SP | COLON | CRLF)*)

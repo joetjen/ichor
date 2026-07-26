@@ -1,0 +1,150 @@
+defmodule Ichor.BNF.ActionsTest do
+  use ExUnit.Case, async: true
+  doctest Ichor.BNF
+
+  alias Grammar.IR
+  alias Support.IRStrip
+
+  defp run(source), do: Ichor.BNF.run(source)
+
+  defp rule(source, name) do
+    {:ok, ruleset} = run(source)
+    Map.fetch!(ruleset, name)
+  end
+
+  describe "the BNF worked example" do
+    test "digit/number, exercising BNF's only repetition technique: right-recursion" do
+      source = """
+      <digit> ::= '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
+      <number> ::= <digit> | <digit> <number>
+      """
+
+      assert {:ok, ruleset} = run(source)
+
+      assert IRStrip.strip(ruleset[:digit]) ==
+               IRStrip.strip(IR.choice(for d <- ~w(0 1 2 3 4 5 6 7 8 9), do: IR.literal(d)))
+
+      assert IRStrip.strip(ruleset[:number]) ==
+               IRStrip.strip(
+                 IR.choice([
+                   IR.rule_ref(:digit),
+                   IR.seq([IR.rule_ref(:digit), IR.rule_ref(:number)])
+                 ])
+               )
+    end
+  end
+
+  describe "terminals" do
+    test "single-quoted and double-quoted terminals both work, in the same sequence" do
+      assert IRStrip.strip(rule("<a> ::= 'x' \"y\"\n", :a)) ==
+               IRStrip.strip(IR.seq([IR.literal("x"), IR.literal("y")]))
+    end
+
+    test "the empty string" do
+      assert IRStrip.strip(rule("<a> ::= ''\n", :a)) == IRStrip.strip(IR.literal(""))
+    end
+  end
+
+  describe "nonterminals" do
+    test "a bare nonterminal reference" do
+      assert IRStrip.strip(rule("<a> ::= <b>\n", :a)) == IRStrip.strip(IR.rule_ref(:b))
+    end
+
+    test "names are kept exactly as written -- no case-insensitivity, unlike ABNF" do
+      {:ok, ruleset} = run("<MyRule> ::= 'x'\n")
+      assert Map.has_key?(ruleset, :MyRule)
+      refute Map.has_key?(ruleset, :myrule)
+    end
+
+    test "a nonterminal name can contain digits, dashes, and underscores" do
+      {:ok, ruleset} = run("<ip4-octet_1> ::= 'x'\n")
+      assert Map.has_key?(ruleset, :"ip4-octet_1")
+    end
+  end
+
+  describe "alternation and concatenation" do
+    test "a single alternative isn't wrapped in Choice" do
+      assert IRStrip.strip(rule("<a> ::= <b>\n", :a)) == IRStrip.strip(IR.rule_ref(:b))
+    end
+
+    test "multiple alternatives become a Choice, in source order" do
+      assert IRStrip.strip(rule("<a> ::= <b> | <c> | <d>\n", :a)) ==
+               IRStrip.strip(IR.choice([IR.rule_ref(:b), IR.rule_ref(:c), IR.rule_ref(:d)]))
+    end
+
+    test "a single-element sequence isn't wrapped in Seq" do
+      assert IRStrip.strip(rule("<a> ::= <b>\n", :a)) == IRStrip.strip(IR.rule_ref(:b))
+    end
+
+    test "multiple elements become a Seq, in source order" do
+      assert IRStrip.strip(rule("<a> ::= <b> <c> <d>\n", :a)) ==
+               IRStrip.strip(IR.seq([IR.rule_ref(:b), IR.rule_ref(:c), IR.rule_ref(:d)]))
+    end
+
+    test "nonterminals and terminals can be freely mixed in one sequence" do
+      assert IRStrip.strip(rule("<a> ::= <b> 'lit' <c>\n", :a)) ==
+               IRStrip.strip(IR.seq([IR.rule_ref(:b), IR.literal("lit"), IR.rule_ref(:c)]))
+    end
+  end
+
+  describe "multiple rules and line handling (the real bug behind the SP/NEWLINE split)" do
+    test "consecutive rules, one per line, stay separate" do
+      source = "<a> ::= 'x'\n<b> ::= 'y'\n"
+      assert {:ok, ruleset} = run(source)
+      assert IRStrip.strip(ruleset[:a]) == IRStrip.strip(IR.literal("x"))
+      assert IRStrip.strip(ruleset[:b]) == IRStrip.strip(IR.literal("y"))
+    end
+
+    test "a rule referencing another rule doesn't swallow the next line's rule too" do
+      # Without the SP/NEWLINE split (priv/grammar/bnf.aether's own
+      # comment explains why), `sequence := element+` would greedily
+      # treat <b>'s own opening nonterminal as one more element of <a>.
+      source = "<a> ::= <x>\n<b> ::= <a>\n"
+      assert {:ok, ruleset} = run(source)
+      assert IRStrip.strip(ruleset[:a]) == IRStrip.strip(IR.rule_ref(:x))
+      assert IRStrip.strip(ruleset[:b]) == IRStrip.strip(IR.rule_ref(:a))
+    end
+
+    test "blank lines between rules are tolerated" do
+      source = "<a> ::= 'x'\n\n\n<b> ::= 'y'\n"
+      assert {:ok, ruleset} = run(source)
+      assert IRStrip.strip(ruleset[:a]) == IRStrip.strip(IR.literal("x"))
+      assert IRStrip.strip(ruleset[:b]) == IRStrip.strip(IR.literal("y"))
+    end
+
+    test "a trailing newline (or lack of one) doesn't affect the result" do
+      assert {:ok, with_nl} = run("<a> ::= 'x'\n")
+      assert {:ok, without_nl} = run("<a> ::= 'x'")
+      assert IRStrip.strip(with_nl[:a]) == IRStrip.strip(without_nl[:a])
+    end
+  end
+
+  describe "duplicate definitions" do
+    test "defining the same nonterminal twice is a real error, not silently overwritten" do
+      source = "<a> ::= 'x'\n<a> ::= 'y'\n"
+      assert {:error, %Ichor.Error{message: message}} = run(source)
+      assert message =~ "defined more than once"
+    end
+  end
+
+  describe "parse/1 and tokenize/1 (bare recognizer, generated by use Ichor)" do
+    test "parse/1 matches with no Ichor.BNF.Actions involved" do
+      assert {:ok, _pos, _raw_captures} = Ichor.BNF.parse("<a> ::= 'x'\n")
+    end
+
+    test "tokenize/1 exposes the raw token stream" do
+      assert {:ok, tokens} = Ichor.BNF.tokenize("<a> ::= 'x'\n")
+
+      assert Enum.map(tokens, & &1.name) == [
+               :NONTERM_OPEN,
+               :NONTERM_NAME,
+               :NONTERM_CLOSE,
+               :TRIVIA,
+               :DEFINED_AS,
+               :TRIVIA,
+               :SQ_TERMINAL,
+               :NEWLINE
+             ]
+    end
+  end
+end

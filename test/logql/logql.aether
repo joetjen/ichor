@@ -1,0 +1,30 @@
+@grammar "logql"
+@root query
+
+LINE_FORMAT := "line_format"
+LOGFMT      := "logfmt"
+JSON        := "json"
+LBRACE      := "{"
+RBRACE      := "}"
+COMMA       := ","
+PIPE        := "|"
+EQ          := "="
+NEQ         := "!="
+EQ_TILDE    := "=~"
+NEQ_TILDE   := "!~"
+PIPE_EQ     := "|="
+PIPE_TILDE  := "|~"
+IDENT       := [[:alpha:]_][[:alnum:]_]*
+STRING      := "\"" (!"\"" .)* "\""
+SPACE       := [ \t]*
+
+query             := stream_selector pipeline_stage*
+stream_selector   := LBRACE label_matcher (COMMA label_matcher)* RBRACE
+label_matcher     := IDENT match_op STRING
+match_op          := EQ_TILDE | NEQ_TILDE | NEQ | EQ
+pipeline_stage    := filter_expr | PIPE (line_format_stage | logfmt_stage | json_stage)
+filter_expr       := filter_op STRING
+filter_op         := PIPE_EQ | NEQ_TILDE | PIPE_TILDE | NEQ
+line_format_stage := LINE_FORMAT STRING
+logfmt_stage      := LOGFMT
+json_stage        := JSON
