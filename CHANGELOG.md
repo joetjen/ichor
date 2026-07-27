@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Split `Aether.Parser` into `Aether.Reader` (pure-syntax parsing of
+  `.aether` source into a concrete syntax tree, no desugaring) and
+  `Aether.Eval` (that CST into `Grammar.IR`/`Aether.Grammar`, owning
+  predefined-token override/use tracking, case-insensitivity resolution,
+  character-class/regex desugaring, inline-literal promotion, and
+  `@skip` splicing). Mirrors the Reader/Eval split generated grammar code
+  already has (`parse/1` vs. `run/1,2`) and the ABNF/BNF/EBNF/PEG
+  importers already inherit from it. `Aether.Parser.parse/2` remains the
+  combined entry point; observable behavior is unchanged.
+
 ## [0.1.0] - 2026-07-26
 
 ### Added
