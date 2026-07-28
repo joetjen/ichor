@@ -16,13 +16,13 @@ defmodule Grammar.Native.GLR do
   in place of the closures-over-maps the interpreted path builds.
   """
 
-  alias Grammar.LRTable
+  alias Grammar.LRTable.Builder
   alias Grammar.Native.TokenizerCompiler
 
   @doc "Generates the full quoted body (lexer + compiled GLR action/goto lookup + `parse/1,2` + `run/1,2`) for `grammar`, dispatching to `actions_module`."
   @spec generate(Aether.Grammar.t(), module()) :: Macro.t()
   def generate(%Aether.Grammar{engine: :glr} = grammar, actions_module) do
-    case LRTable.build(grammar) do
+    case Builder.build(grammar) do
       {:error, errors} ->
         raise CompileError, description: Enum.map_join(errors, "\n", &Ichor.Error.format/1)
 

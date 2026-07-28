@@ -1,22 +1,10 @@
 defmodule Grammar.SourceTest do
   use ExUnit.Case, async: true
 
-  alias Grammar.Source
-
-  test "valid UTF-8 passes through unchanged" do
-    assert Source.validate("hello, ééé") == {:ok, "hello, ééé"}
-  end
-
-  test "an empty string is valid" do
-    assert Source.validate("") == {:ok, ""}
-  end
-
-  test "invalid UTF-8 is rejected with a lexer-stage error" do
-    invalid = <<"abc"::binary, 0xFF, "def"::binary>>
-    assert {:error, %Ichor.Error{stage: :lexer, message: message}} = Source.validate(invalid)
-    assert message =~ "not valid UTF-8"
-  end
-
+  # Grammar.Source's own unit tests (Grammar.SourceTest) now live in
+  # ichor_runtime, alongside the module itself -- this is the one
+  # Grammar.Source-adjacent behavior that genuinely needs the full
+  # pipeline (both backends, a real compiled grammar), so it stays here.
   test "both backends reject invalid UTF-8 input before crashing a matcher" do
     invalid = <<"1", 0xFF>>
     assert {:error, %Ichor.Error{stage: :lexer}} = Native.Calculator.run(invalid)

@@ -1,8 +1,7 @@
 defmodule Grammar.LRTableTest do
   use ExUnit.Case, async: true
 
-  alias Grammar.LRTable
-  alias Grammar.LRTable.{Desugar, Production}
+  alias Grammar.LRTable.{Builder, Desugar, Production}
 
   defp compile!(source, opts \\ []) do
     {:ok, grammar} = Aether.Parser.parse(source)
@@ -122,7 +121,7 @@ defmodule Grammar.LRTableTest do
     end
   end
 
-  describe "Grammar.LRTable.build/1: automaton + SLR(1) table" do
+  describe "Grammar.LRTable.Builder.build/1: automaton + SLR(1) table" do
     test "a left-recursive, unambiguous grammar builds with zero conflicts" do
       grammar =
         compile!(~S"""
@@ -136,8 +135,8 @@ defmodule Grammar.LRTableTest do
         expr := expr PLUS n:NUM | n:NUM
         """)
 
-      assert {:ok, table} = LRTable.build(grammar)
-      assert LRTable.conflicts(table) == []
+      assert {:ok, table} = Builder.build(grammar)
+      assert Builder.conflicts(table) == []
     end
 
     test "a genuinely ambiguous grammar (two rules matching the same input) reports a reduce/reduce conflict" do
@@ -155,8 +154,8 @@ defmodule Grammar.LRTableTest do
         b := X
         """)
 
-      assert {:ok, table} = LRTable.build(grammar)
-      assert [{_state, _symbol, actions}] = LRTable.conflicts(table)
+      assert {:ok, table} = Builder.build(grammar)
+      assert [{_state, _symbol, actions}] = Builder.conflicts(table)
       assert length(actions) == 2
     end
 
@@ -175,8 +174,8 @@ defmodule Grammar.LRTableTest do
         top := rule A
         """)
 
-      assert {:ok, table} = LRTable.build(grammar)
-      assert LRTable.conflicts(table) != []
+      assert {:ok, table} = Builder.build(grammar)
+      assert Builder.conflicts(table) != []
     end
   end
 end

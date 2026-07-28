@@ -11,6 +11,18 @@ defmodule Ichor.Actions do
   `Grammar.VM` builds the raw capture tree during matching, and this
   module's `evaluate/5` walks it, calling into the actions module (or the
   default fallback) as it goes, threading `context` throughout.
+
+  `evaluate_node/3` is the companion entry point for a raw capture node
+  that *didn't* come from the original parse -- a grammar with
+  macro-like features (LISP's own `defmacro`/expansion is the reference
+  case) needs to evaluate the result of its own expansion through this
+  same `handle_rule`/`handle_token` dispatch, not skip it. Not
+  Lisp-specific in principle: any grammar with macro-like features needs
+  this same re-entry point. Genuinely a runtime concern (called from
+  generated/hand-written Actions code while actually running a parse),
+  unlike `Ichor.generate/3`/`Ichor.__using__/1`, which only ever run at
+  compile time -- that split is exactly why this lives here, in
+  `ichor_runtime`, rather than alongside those two in `ichor` proper.
   """
 
   alias Ichor.{Capture, Error, Node}
@@ -101,6 +113,28 @@ defmodule Ichor.Actions do
     else
       :ok
     end
+  end
+
+  @doc """
+  Evaluates a raw capture node (as found on any `Ichor.Capture.node`, or
+  built directly by something like a macro's `unreify`) against
+  `actions_module`, starting from `context`. See this module's own
+  moduledoc for when you need this instead of an ordinary `.eval` thunk.
+  """
+  @spec evaluate_node(Ichor.Capture.node_t(), module(), context()) ::
+          {:ok, term(), context()} | {:error, Error.t()}
+  def evaluate_node({:token, name, text}, actions_module, context) do
+    with {:ok, value} <- dispatch_token(actions_module, name, text, context) do
+      {:ok, value, context}
+    end
+  end
+
+  def evaluate_node({:rule, name, raw_captures}, actions_module, context) do
+    dispatch_rule(actions_module, name, raw_captures, context, %{})
+  end
+
+  def evaluate_node({:text, text}, _actions_module, context) do
+    {:ok, text, context}
   end
 
   # ---- dispatch + default fallback ---------------------------------------

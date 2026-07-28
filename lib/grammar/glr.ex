@@ -33,6 +33,7 @@ defmodule Grammar.GLR do
 
   alias Grammar.GLR.Runtime
   alias Grammar.LRTable
+  alias Grammar.LRTable.Builder
   alias Ichor.{Actions, Error}
 
   @type t :: %__MODULE__{table: LRTable.t(), capture_shapes: Actions.capture_shapes()}
@@ -42,7 +43,7 @@ defmodule Grammar.GLR do
   @spec compile(Aether.Grammar.t()) :: {:ok, t()} | {:error, [Error.t()]}
   def compile(%Aether.Grammar{} = grammar) do
     with {:ok, grammar} <- check_engine(grammar),
-         {:ok, table} <- LRTable.build(grammar) do
+         {:ok, table} <- Builder.build(grammar) do
       {:ok,
        %__MODULE__{table: table, capture_shapes: Grammar.VM.RuleCompiler.capture_shapes(grammar)}}
     end

@@ -63,8 +63,8 @@ defmodule Grammar.GLRTest do
     end
 
     test "the table has a real reduce/reduce conflict here", %{grammar: grammar} do
-      {:ok, table} = Grammar.LRTable.build(grammar)
-      assert Grammar.LRTable.conflicts(table) != []
+      {:ok, table} = Grammar.LRTable.Builder.build(grammar)
+      assert Grammar.LRTable.Builder.conflicts(table) != []
     end
 
     test "a declared first in s's own alternatives -- Grammar.GLR picks the a-rooted derivation",
@@ -81,8 +81,8 @@ defmodule Grammar.GLRTest do
     end
 
     test "the table has a real shift/reduce conflict here", %{grammar: grammar} do
-      {:ok, table} = Grammar.LRTable.build(grammar)
-      assert Grammar.LRTable.conflicts(table) != []
+      {:ok, table} = Grammar.LRTable.Builder.build(grammar)
+      assert Grammar.LRTable.Builder.conflicts(table) != []
     end
 
     test "an unambiguous single if/else is unaffected", %{grammar: grammar} do

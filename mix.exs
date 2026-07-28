@@ -31,6 +31,7 @@ defmodule Ichor.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:ichor_runtime, path: "packages/ichor_runtime"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
   end
@@ -85,11 +86,7 @@ defmodule Ichor.MixProject do
   defp groups_for_modules do
     [
       Core: [
-        Ichor,
-        Ichor.Actions,
-        Ichor.Capture,
-        Ichor.Node,
-        Ichor.Error
+        Ichor
       ],
       "Grammar IR": [
         Grammar.IR,
@@ -127,18 +124,17 @@ defmodule Ichor.MixProject do
         Grammar.VM.Linker,
         Grammar.VM.Program,
         Grammar.VM.RuleCompiler,
-        Grammar.VM.Token,
         Grammar.VM.TokenInterpreter
       ],
       "Native Backend": [
         Grammar.Native,
         Grammar.Native.CharCompiler,
-        Grammar.Native.RuleCompiler,
-        Grammar.Native.Runtime
+        Grammar.Native.RuleCompiler
       ],
       Tooling: [
         Grammar.Tokens,
-        Mix.Tasks.Ichor.Tokens
+        Mix.Tasks.Ichor.Tokens,
+        Mix.Tasks.Ichor.Gen
       ],
       "Format Importers": [
         Ichor.ABNF,
