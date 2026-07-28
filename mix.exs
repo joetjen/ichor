@@ -52,6 +52,8 @@ defmodule Ichor.MixProject do
   defp docs do
     [
       main: "readme",
+      source_url: "https://github.com/joetjen/ichor",
+      source_ref: "v#{@version}",
       extras: extras(),
       groups_for_extras: groups_for_extras(),
       groups_for_modules: groups_for_modules()

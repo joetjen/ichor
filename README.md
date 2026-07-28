@@ -152,7 +152,7 @@ its source:
 def deps do
   [
     {:ichor, path: "path/to/ichor"}
-    # or: {:ichor, github: "your-org/ichor"}
+    # or: {:ichor, github: "joetjen/ichor"}
   ]
 end
 ```
