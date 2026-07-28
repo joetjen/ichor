@@ -1,5 +1,8 @@
 # Ichor
 
+[![Hex.pm](https://img.shields.io/hexpm/v/ichor.svg)](https://hex.pm/packages/ichor)
+[![Documentation](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/ichor)
+
 Ichor compiles grammar definitions into working language implementations.
 Write a grammar once — in Aether (Ichor's own grammar language) or import
 one from ABNF, BNF, EBNF, or PEG — and Ichor turns it into a Lexer, a
@@ -145,19 +148,7 @@ heredocs, string interpolation).
 
 ## Installation
 
-Ichor isn't published on Hex yet. Until then, depend on it directly from
-its source:
-
-```elixir
-def deps do
-  [
-    {:ichor, path: "path/to/ichor"}
-    # or: {:ichor, github: "joetjen/ichor"}
-  ]
-end
-```
-
-Once published, the usual form will apply:
+Add `ichor` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
