@@ -12,8 +12,28 @@ RPAREN     := ")"
 NEWLINE    := "\n"
 PLAIN_CHAR := !("*" | "[" | "\n") .
 
-document  := block (NEWLINE+ block)*
-block     := heading | list | paragraph
+document       := block (NEWLINE+ block)*
+block          := thematic_break | heading | list | paragraph
+
+; CommonMark's own thematic break (`<hr>`): three or more `-` with
+; nothing else on the line -- genuinely ambiguous with `list`/`item`
+; (both start with `DASH`; three bare dashes would otherwise parse as a
+; one-item list whose text is "--"), resolved the CommonMark-specified
+; way, by trying `thematic_break` first. `&NEWLINE` is what makes this a
+; *break* and not just "three dashes, then whatever text follows on the
+; same line" -- confirming the line truly ends here without consuming
+; that boundary, so `document`'s own `NEWLINE+` still sees and consumes
+; it. A plain `!PLAIN_CHAR` NotPred can't stand in for this:
+; `PLAIN_CHAR` itself already excludes `\n`, so it can't distinguish
+; "line ends here" from "more content follows" the way confirming a
+; specific required continuation (`&expr`, unlike `!expr`) can. Narrow,
+; documented gap to keep this simple: a thematic break as a document's
+; very last line, with no trailing newline at all, isn't recognized --
+; `.`/`Any` (which `!.`-for-end-of-input would need) can only appear
+; inside a token definition, not a rule, so confirming genuine
+; end-of-input here would need a dedicated zero-width token of its own.
+thematic_break := DASH DASH DASH DASH* &NEWLINE
+
 heading   := level:HASH+ PLAIN_CHAR inline
 list      := item (NEWLINE item)*
 item      := DASH PLAIN_CHAR inline

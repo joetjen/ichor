@@ -57,7 +57,7 @@ defmodule Grammar.VM.RuleCompiler do
 
   @spec compile(Aether.Grammar.t()) :: Grammar.VM.Program.t()
   def compile(grammar) do
-    token_names = MapSet.new(Map.keys(grammar.tokens))
+    token_names = token_names(grammar)
     anon_tokens = implicit_capture_exclusions(grammar)
 
     {named_ops, _counter} =
@@ -67,6 +67,21 @@ defmodule Grammar.VM.RuleCompiler do
       end)
 
     Linker.link(Enum.reverse(named_ops))
+  end
+
+  # Every name a `RuleRef` can mean a *token* by: both a real
+  # `TOKEN := ...` declaration and a `@keywords`/`@refine` reclassification
+  # target (which never gets its own declaration -- see
+  # `Aether.Grammar.refiner_target_names/1`). Public because
+  # `Grammar.Native.RuleCompiler` needs the exact same token/rule split --
+  # this determination must not drift between backends.
+  @doc false
+  @spec token_names(Aether.Grammar.t()) :: MapSet.t(atom())
+  def token_names(grammar) do
+    MapSet.union(
+      MapSet.new(Map.keys(grammar.tokens)),
+      Aether.Grammar.refiner_target_names(grammar.refiners)
+    )
   end
 
   # Bare references never get an implicit self-capture when they're
@@ -128,6 +143,18 @@ defmodule Grammar.VM.RuleCompiler do
   defp repeatable_names(%IR.Indent{expr: e}, rep?, anon, acc),
     do: repeatable_names(e, rep?, anon, acc)
 
+  # `name:REF` never produces an implicit self-capture under `REF`'s own
+  # name (see `leaf/4`'s matching special case below) -- only `name`
+  # itself -- so recursing into the bare `RuleRef` with the same `rep?`
+  # would wrongly mark `REF`'s own name repeatable too, purely because it
+  # happens to be *referenced* from a repeated position, even though
+  # nothing ever captures under that name here. Composite inner
+  # expressions (the general clause below) genuinely can contain their
+  # own further-nested captures, which do need the recursion.
+  defp repeatable_names(%IR.Capture{name: name, expr: %IR.RuleRef{}}, rep?, _anon, acc) do
+    if rep?, do: MapSet.put(acc, name), else: acc
+  end
+
   defp repeatable_names(%IR.Capture{name: name, expr: inner}, rep?, anon, acc) do
     acc = if rep?, do: MapSet.put(acc, name), else: acc
     repeatable_names(inner, rep?, anon, acc)
@@ -156,6 +183,22 @@ defmodule Grammar.VM.RuleCompiler do
     {captured_ref(cap_name, ref_name, token_names), counter}
   end
 
+  # `@native(...)`, bare or explicitly captured: like a bare `RuleRef`'s
+  # implicit self-capture, but there's no rule/token name to reuse, so the
+  # callback's own `function` name stands in for it.
+  defp leaf(
+         %IR.Capture{name: cap_name, expr: %IR.Custom{} = custom},
+         counter,
+         _token_names,
+         _anon_tokens
+       ) do
+    {captured_custom(cap_name, custom), counter}
+  end
+
+  defp leaf(%IR.Custom{function: function} = custom, counter, _token_names, _anon_tokens) do
+    {captured_custom(function, custom), counter}
+  end
+
   defp leaf(%IR.Capture{name: cap_name, expr: inner}, counter, token_names, anon_tokens) do
     {ops, counter} = Compiler.compile(inner, counter, &leaf(&1, &2, token_names, anon_tokens))
     {[{:cap_start, cap_name, :text, nil}] ++ ops ++ [{:cap_end, cap_name}], counter}
@@ -177,5 +220,13 @@ defmodule Grammar.VM.RuleCompiler do
     else
       [{:cap_start, cap_name, :rule, ref_name}, {:call, ref_name}, {:cap_end, cap_name}]
     end
+  end
+
+  defp captured_custom(cap_name, %IR.Custom{module: module, function: function, deps: deps}) do
+    [
+      {:cap_start, cap_name, :custom, nil},
+      {:custom, module, function, deps},
+      {:cap_end, cap_name}
+    ]
   end
 end

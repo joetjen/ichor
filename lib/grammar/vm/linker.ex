@@ -13,6 +13,10 @@ defmodule Grammar.VM.Linker do
   by name, resolved against every op list at once (that's the whole
   reason linking happens globally instead of per-name: `:call` needs to
   reach targets compiled by a different, unrelated `compile/1` call).
+  `{:custom, module, function, dep_names}` (a `Grammar.IR.Custom`
+  `@native(...)` node) resolves the same way, except it names *several*
+  targets at once -- one per declared dependency -- ending up as
+  `{:custom, module, function, %{dep_name => entry_index}}`.
   """
 
   @doc """
@@ -51,5 +55,11 @@ defmodule Grammar.VM.Linker do
   defp resolve({:back_commit, l}, labels, _entries), do: {:back_commit, Map.fetch!(labels, l)}
   defp resolve({:test_progress, l}, labels, _entries), do: {:test_progress, Map.fetch!(labels, l)}
   defp resolve({:call, name}, _labels, entries), do: {:call, Map.fetch!(entries, name)}
+
+  defp resolve({:custom, module, function, dep_names}, _labels, entries) do
+    dep_entries = Map.new(dep_names, fn name -> {name, Map.fetch!(entries, name)} end)
+    {:custom, module, function, dep_entries}
+  end
+
   defp resolve(other, _labels, _entries), do: other
 end

@@ -41,6 +41,8 @@ defmodule Aether.Reader do
     @type def_t ::
             {:token, atom(), Aether.Reader.cst(), Aether.Reader.pos()}
             | {:rule, atom(), Aether.Reader.cst(), Aether.Reader.pos()}
+            | {:keywords, atom(), %{String.t() => atom()}, Aether.Reader.pos()}
+            | {:refine, atom(), String.t(), String.t(), [atom()], Aether.Reader.pos()}
 
     @type t :: %__MODULE__{
             name: String.t(),
@@ -49,6 +51,7 @@ defmodule Aether.Reader do
             skip_mode: :none | :default | {:custom, atom()},
             skip_pos: Aether.Reader.pos() | nil,
             case_insensitive: boolean(),
+            engine: :peg | :lr | :glr,
             defs: [def_t()],
             source: String.t(),
             file: String.t() | nil
@@ -61,6 +64,7 @@ defmodule Aether.Reader do
       :skip_mode,
       :skip_pos,
       :case_insensitive,
+      engine: :peg,
       defs: [],
       source: nil,
       file: nil
@@ -92,6 +96,17 @@ defmodule Aether.Reader do
           | {:regex, String.t(), pos()}
           | {:dot, pos()}
           | {:ref, atom(), pos()}
+          | {:native, String.t(), String.t(), [atom()], hint(), pos()}
+
+  @typedoc """
+  Author-supplied facts for a `@native(...)` node, standing in for what
+  `Grammar.Analysis` would otherwise compute structurally -- `nil` means
+  "not given, `Aether.Eval` applies its default." `:leading`, when given,
+  is itself a list of declared-dependency rule names (never arbitrary
+  rules outside that list -- `@native(...)`'s own argument list is the
+  only thing this node can reference).
+  """
+  @type hint :: %{nullable: boolean() | nil, leading: [atom()] | nil}
 
   @doc "Reads `source` into an `Aether.Reader.Grammar` CST."
   @spec read(String.t(), String.t() | nil) :: {:ok, Grammar.t()} | {:error, Error.t()}
@@ -121,6 +136,7 @@ defmodule Aether.Reader do
       skip_mode: :default,
       skip_pos: nil,
       case_insensitive: false,
+      engine: :peg,
       seen_pragmas: MapSet.new(),
       declared_token_names: MapSet.new(),
       declared_rule_names: MapSet.new(),
@@ -169,6 +185,7 @@ defmodule Aether.Reader do
   defp punct(:tilde), do: "~"
   defp punct(:dot), do: "."
   defp punct(:define), do: ":="
+  defp punct(:arrow), do: "->"
   defp punct(other), do: to_string(other)
 
   defp err(state, %Token{line: line, column: col}, message),
@@ -227,6 +244,7 @@ defmodule Aether.Reader do
       :at_skip -> parse_skip_pragma(state)
       :at_noskip -> parse_noskip_pragma(state)
       :at_case_insensitive -> parse_case_insensitive_pragma(state)
+      :at_engine -> parse_engine_pragma(state)
       _ -> {:ok, state}
     end
   end
@@ -280,6 +298,37 @@ defmodule Aether.Reader do
     end
   end
 
+  # `@engine peg | lr | glr` -- selects which backend family the compiled
+  # grammar targets; defaults to `peg` (today's only behavior) when
+  # omitted, so no existing `.aether` file is affected.
+  defp parse_engine_pragma(state) do
+    if MapSet.member?(state.seen_pragmas, :engine) do
+      {:error, err(state, peek(state), "@engine may only be given once")}
+    else
+      state = advance(state)
+
+      with {:ok, tok, state} <-
+             expect(state, :lower_ident, "'peg', 'lr', or 'glr' after @engine"),
+           {:ok, engine} <- parse_engine_name(state, tok) do
+        state =
+          state
+          |> mark_pragma_seen(:engine)
+          |> Map.put(:engine, engine)
+
+        parse_optional_pragmas(state)
+      end
+    end
+  end
+
+  defp parse_engine_name(_state, %Token{value: "peg"}), do: {:ok, :peg}
+  defp parse_engine_name(_state, %Token{value: "lr"}), do: {:ok, :lr}
+  defp parse_engine_name(_state, %Token{value: "glr"}), do: {:ok, :glr}
+
+  defp parse_engine_name(state, tok),
+    do:
+      {:error,
+       err(state, tok, "unknown @engine #{inspect(tok.value)} -- expected 'peg', 'lr', or 'glr'")}
+
   defp mark_pragma_seen(state, key),
     do: %{state | seen_pragmas: MapSet.put(state.seen_pragmas, key)}
 
@@ -296,6 +345,9 @@ defmodule Aether.Reader do
       :lower_ident ->
         with {:ok, state} <- parse_rule_def(state), do: parse_definitions(state)
 
+      :at_keywords ->
+        with {:ok, state} <- parse_keywords_def(state), do: parse_definitions(state)
+
       _ ->
         {:error, err(state, peek(state), "expected a token or rule definition (NAME := ...)")}
     end
@@ -309,8 +361,93 @@ defmodule Aether.Reader do
 
     with {:ok, _define, state} <-
            expect(state, :define, "':=' after token name #{name_tok.value}"),
-         {:ok, cst, state} <- parse_choice(state, :token) do
-      register_token(state, name, cst, pos)
+         {:ok, cst, state} <- parse_choice(state, :token),
+         {:ok, state} <- register_token(state, name, cst, pos) do
+      parse_optional_refine(state, name)
+    end
+  end
+
+  # ---- @keywords BASE { "text" -> NAME, ... } -------------------------------
+  # Sugar for the common table-lookup case of the same reclassification
+  # mechanism `@refine(...)` is the general escape hatch for -- see
+  # `Grammar.Lexer`.
+
+  defp parse_keywords_def(state) do
+    tok = peek(state)
+    pos = {tok.line, tok.column}
+    state = advance(state)
+
+    with {:ok, base_tok, state} <- expect(state, :upper_ident, "a token name after @keywords"),
+         {:ok, _lb, state} <-
+           expect(state, :lbrace, "'{' after @keywords #{base_tok.value}"),
+         {:ok, table, state} <- parse_keyword_entries(state, %{}) do
+      base_name = String.to_atom(base_tok.value)
+      {:ok, %{state | defs: [{:keywords, base_name, table, pos} | state.defs]}}
+    end
+  end
+
+  defp parse_keyword_entries(state, acc) do
+    with {:ok, text_tok, state} <-
+           expect(state, :string, "a string literal in @keywords { ... }"),
+         {:ok, _arrow, state} <-
+           expect(state, :arrow, "'->' after #{inspect(text_tok.value.text)}"),
+         {:ok, name_tok, state} <- expect(state, :upper_ident, "a token name after '->'") do
+      acc = Map.put(acc, text_tok.value.text, String.to_atom(name_tok.value))
+
+      case peek_type(state) do
+        :comma -> parse_keyword_entries(advance(state), acc)
+        :rbrace -> {:ok, acc, advance(state)}
+        _ -> {:error, err(state, peek(state), "expected ',' or '}' in @keywords { ... }")}
+      end
+    end
+  end
+
+  # ---- @refine("Module", "function", POSSIBLE_NAME, ...) -------------------
+  # A token-definition suffix (mirrors `@native(...)`'s own module/function
+  # string-pair convention): reclassifies/validates a matched token via
+  # hand-written Elixir code instead of a plain `@keywords` table. The
+  # trailing token names declare every name the callback might reclassify
+  # to, the same "state your dependencies so Analysis can check them" role
+  # `@native(...)`'s own dependency list plays.
+
+  defp parse_optional_refine(state, token_name) do
+    case peek_type(state) do
+      :at_refine ->
+        tok = peek(state)
+        pos = {tok.line, tok.column}
+        state = advance(state)
+
+        with {:ok, _lp, state} <- expect(state, :lparen, "'(' after @refine"),
+             {:ok, mod_tok, state} <-
+               expect(state, :string, "a module name string after '@refine('"),
+             {:ok, _c1, state} <- expect(state, :comma, "',' after @refine's module name"),
+             {:ok, fun_tok, state} <-
+               expect(state, :string, "a function name string after the module name"),
+             {:ok, possible, state} <- parse_refine_possible_names(state),
+             {:ok, _rp, state} <- expect(state, :rparen, "')' to close @refine(...)") do
+          refine_def =
+            {:refine, token_name, mod_tok.value.text, fun_tok.value.text, possible, pos}
+
+          {:ok, %{state | defs: [refine_def | state.defs]}}
+        end
+
+      _ ->
+        {:ok, state}
+    end
+  end
+
+  defp parse_refine_possible_names(state) do
+    case peek_type(state) do
+      :comma ->
+        state = advance(state)
+
+        with {:ok, name_tok, state} <- expect(state, :upper_ident, "a token name after ','"),
+             {:ok, rest, state} <- parse_refine_possible_names(state) do
+          {:ok, [String.to_atom(name_tok.value) | rest], state}
+        end
+
+      _ ->
+        {:ok, [], state}
     end
   end
 
@@ -430,7 +567,8 @@ defmodule Aether.Reader do
         :dot,
         :lparen,
         :at_indent,
-        :at_samecol
+        :at_samecol,
+        :at_native
       ]
 
   # An identifier immediately followed by ":=" can never be a reference
@@ -650,8 +788,158 @@ defmodule Aether.Reader do
       %Token{type: :at_samecol} = tok ->
         parse_indent_like(state, tok, context, :samecol)
 
+      %Token{type: :at_native} = tok ->
+        parse_native(state, tok, context)
+
       tok ->
         {:error, err(state, tok, "expected an expression, found #{describe(tok)}")}
+    end
+  end
+
+  # ---- @native("Module", "function", dep, ...) @hint(...) -------------------
+  # `context` (`:rule` or `:token`) only matters for `@hint`'s `leading:`
+  # entry below -- everything else about `@native(...)`'s own syntax is
+  # identical either way; `Aether.Eval` is what actually builds a
+  # `Grammar.IR.Custom` or `Grammar.IR.CustomLexeme` depending on it.
+
+  defp parse_native(state, tok, context) do
+    pos = {tok.line, tok.column}
+    state = advance(state)
+
+    with {:ok, _lp, state} <- expect(state, :lparen, "'(' after @native"),
+         {:ok, mod_tok, state} <-
+           expect(state, :string, "a module name string after '@native('"),
+         {:ok, _c1, state} <- expect(state, :comma, "',' after @native's module name"),
+         {:ok, fun_tok, state} <-
+           expect(state, :string, "a function name string after the module name"),
+         {:ok, deps, state} <- parse_native_deps(state),
+         {:ok, _rp, state} <- expect(state, :rparen, "')' to close @native(...)") do
+      parse_optional_hint(state, mod_tok.value.text, fun_tok.value.text, deps, pos, context)
+    end
+  end
+
+  defp parse_native_deps(state) do
+    case peek_type(state) do
+      :comma ->
+        state = advance(state)
+
+        with {:ok, dep_tok, state} <- expect(state, :lower_ident, "a rule name after ','"),
+             {:ok, rest, state} <- parse_native_deps(state) do
+          {:ok, [String.to_atom(dep_tok.value) | rest], state}
+        end
+
+      _ ->
+        {:ok, [], state}
+    end
+  end
+
+  defp parse_optional_hint(state, mod_str, fun_str, deps, pos, context) do
+    case peek_type(state) do
+      :at_hint ->
+        state = advance(state)
+
+        with {:ok, _lp, state} <- expect(state, :lparen, "'(' after @hint"),
+             {:ok, hint, state} <-
+               parse_hint_entries(state, deps, context, %{nullable: nil, leading: nil}),
+             {:ok, _rp, state} <- expect(state, :rparen, "')' to close @hint(...)") do
+          {:ok, {:native, mod_str, fun_str, deps, hint, pos}, state}
+        end
+
+      _ ->
+        {:ok, {:native, mod_str, fun_str, deps, %{nullable: nil, leading: nil}, pos}, state}
+    end
+  end
+
+  defp parse_hint_entries(state, deps, context, acc) do
+    with {:ok, acc, state} <- parse_hint_entry(state, deps, context, acc) do
+      case peek_type(state) do
+        :comma -> parse_hint_entries(advance(state), deps, context, acc)
+        _ -> {:ok, acc, state}
+      end
+    end
+  end
+
+  defp parse_hint_entry(state, deps, context, acc) do
+    case peek(state) do
+      %Token{type: :lower_ident, value: "nullable"} ->
+        state = advance(state)
+
+        with {:ok, _c, state} <- expect(state, :colon, "':' after 'nullable'"),
+             {:ok, value, state} <- parse_bool(state) do
+          {:ok, %{acc | nullable: value}, state}
+        end
+
+      %Token{type: :lower_ident, value: "leading"} = tok when context != :rule ->
+        {:error,
+         err(
+           state,
+           tok,
+           "leading: is only meaningful for a rule-position @native(...) -- left-recursion-cycle detection doesn't apply to tokens"
+         )}
+
+      %Token{type: :lower_ident, value: "leading"} ->
+        state = advance(state)
+
+        with {:ok, _c, state} <- expect(state, :colon, "':' after 'leading'"),
+             {:ok, names, state} <- parse_leading_list(state, deps) do
+          {:ok, %{acc | leading: names}, state}
+        end
+
+      tok ->
+        {:error, err(state, tok, "expected 'nullable' or 'leading' in @hint(...)")}
+    end
+  end
+
+  defp parse_bool(state) do
+    case peek(state) do
+      %Token{type: :lower_ident, value: "true"} -> {:ok, true, advance(state)}
+      %Token{type: :lower_ident, value: "false"} -> {:ok, false, advance(state)}
+      tok -> {:error, err(state, tok, "expected 'true' or 'false'")}
+    end
+  end
+
+  defp parse_leading_list(state, deps) do
+    with {:ok, _lp, state} <- expect(state, :lparen, "'(' after 'leading:'") do
+      case peek_type(state) do
+        :rparen ->
+          {:ok, [], advance(state)}
+
+        _ ->
+          with {:ok, names, state} <- parse_leading_names(state, deps),
+               {:ok, _rp, state} <- expect(state, :rparen, "')' to close 'leading: (...)'") do
+            {:ok, names, state}
+          end
+      end
+    end
+  end
+
+  defp parse_leading_names(state, deps) do
+    with {:ok, tok, state} <- expect(state, :lower_ident, "a rule name in 'leading: (...)'"),
+         {:ok, name} <- validate_leading_name(state, tok, deps) do
+      case peek_type(state) do
+        :comma ->
+          with {:ok, rest, state} <- parse_leading_names(advance(state), deps) do
+            {:ok, [name | rest], state}
+          end
+
+        _ ->
+          {:ok, [name], state}
+      end
+    end
+  end
+
+  defp validate_leading_name(state, tok, deps) do
+    name = String.to_atom(tok.value)
+
+    if name in deps do
+      {:ok, name}
+    else
+      {:error,
+       err(
+         state,
+         tok,
+         "@hint's leading: may only name a rule already listed as an @native(...) dependency (#{inspect(name)} isn't one of #{inspect(deps)})"
+       )}
     end
   end
 
@@ -698,6 +986,7 @@ defmodule Aether.Reader do
        skip_mode: skip_mode,
        skip_pos: state.skip_pos,
        case_insensitive: state.case_insensitive,
+       engine: state.engine,
        defs: Enum.reverse(state.defs),
        source: state.source,
        file: state.file

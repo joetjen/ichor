@@ -16,56 +16,41 @@ defmodule Grammar.Native do
   bytecode loop), not in re-implementing evaluation.
   """
 
-  alias Grammar.Native.{CharCompiler, RuleCompiler, Runtime}
+  alias Grammar.Native.RuleCompiler
+  alias Grammar.Native.TokenizerCompiler
   alias Grammar.VM.RuleCompiler, as: VMRuleCompiler
 
   @doc "Generates the full quoted body (lexer + parser + `parse/1` + `run/1,2`) for `grammar`, dispatching to `actions_module`."
   @spec generate(Aether.Grammar.t(), module()) :: Macro.t()
-  def generate(%Aether.Grammar{} = grammar, actions_module) do
-    char_defs = CharCompiler.compile(grammar.tokens)
+  def generate(%Aether.Grammar{engine: :peg} = grammar, actions_module) do
+    {tokenizer_defs, tokenize_def} = TokenizerCompiler.generate(grammar)
     rule_defs = RuleCompiler.compile(grammar)
-    lexable = Grammar.VM.lexable_token_order(grammar)
     root_fn = RuleCompiler.rule_fn_name(grammar.root)
     capture_shapes = Macro.escape(VMRuleCompiler.capture_shapes(grammar))
     root = grammar.root
-    input = Macro.var(:input, nil)
-
-    candidates =
-      Enum.map(lexable, fn tok_name ->
-        fn_name = CharCompiler.fn_name(tok_name)
-
-        quote do
-          {unquote(tok_name), fn -> unquote(fn_name)(unquote(input)) end}
-        end
-      end)
 
     quote do
-      alias Grammar.Native.Runtime
+      alias Grammar.Native.Runtime.{Parser, Tokenizer}
       alias Grammar.VM.Token
 
-      unquote_splicing(char_defs)
+      unquote_splicing(tokenizer_defs)
       unquote_splicing(rule_defs)
 
-      defp lex_candidates(unquote(input)) do
-        unquote(candidates)
-      end
+      unquote(tokenize_def)
 
-      @doc "Tokenizes `input` completely via maximal munch, or reports the first position nothing matches."
-      @spec tokenize(String.t()) :: {:ok, [Token.t()]} | {:error, Ichor.Error.t()}
-      def tokenize(input), do: Runtime.tokenize(&lex_candidates/1, input)
-
-      @doc "Matches `input` against the grammar's root rule, requiring the entire (tokenized) input to be consumed. A bare recognizer -- no `Ichor.Actions` involved."
-      @spec parse(String.t()) :: {:ok, non_neg_integer(), map()} | {:error, Ichor.Error.t()}
-      def parse(input) do
-        with {:ok, tokens} <- tokenize(input) do
+      @doc "Matches `input` against the grammar's root rule, requiring the entire (tokenized) input to be consumed. A bare recognizer -- no `Ichor.Actions` involved. `context` is read-only and only ever consulted by a `Grammar.IR.Custom` `@native(...)` node, if the grammar has one."
+      @spec parse(String.t(), term()) ::
+              {:ok, non_neg_integer(), map()} | {:error, Ichor.Error.t()}
+      def parse(input, context \\ nil) do
+        with {:ok, tokens} <- tokenize(input, context) do
           stream = List.to_tuple(tokens)
 
-          case unquote(root_fn)(stream, 0, [0]) do
+          case unquote(root_fn)(stream, 0, [0], context) do
             {:ok, pos, _ref_stack, raw_captures} when pos == tuple_size(stream) ->
               {:ok, pos, raw_captures}
 
             {:ok, pos, _ref_stack, _raw_captures} ->
-              {:error, Runtime.unexpected_token_error(stream, pos, input)}
+              {:error, Parser.unexpected_token_error(stream, pos, input)}
 
             _fail ->
               {:error,
@@ -82,7 +67,7 @@ defmodule Grammar.Native do
       @spec run(String.t(), Ichor.Actions.context()) ::
               {:ok, term()} | {:error, Ichor.Error.t() | [Ichor.Error.t()]}
       def run(input, initial_context \\ nil) do
-        with {:ok, _pos, raw_captures} <- parse(input),
+        with {:ok, _pos, raw_captures} <- parse(input, initial_context),
              {:ok, value, _context} <-
                Ichor.Actions.evaluate(
                  unquote(root),
@@ -100,18 +85,18 @@ defmodule Grammar.Native do
               {:ok, [term()], Ichor.Actions.context()}
               | {:error, Ichor.Error.t() | [Ichor.Error.t()]}
       def run_sequence(input, initial_context) do
-        with {:ok, tokens} <- tokenize(input) do
+        with {:ok, tokens} <- tokenize(input, initial_context) do
           do_run_sequence(List.to_tuple(tokens), 0, initial_context, [])
         end
       end
 
       defp do_run_sequence(stream, pos, ctx, acc) do
-        pos = Runtime.skip_leading_trivia(stream, pos, unquote(grammar.skip))
+        pos = Parser.skip_leading_trivia(stream, pos, unquote(grammar.skip))
 
         if pos >= tuple_size(stream) do
           {:ok, Enum.reverse(acc), ctx}
         else
-          case unquote(root_fn)(stream, pos, [0]) do
+          case unquote(root_fn)(stream, pos, [0], ctx) do
             {:ok, new_pos, _ref_stack, raw_captures} ->
               case Ichor.Actions.evaluate(
                      unquote(root),
@@ -134,5 +119,16 @@ defmodule Grammar.Native do
         end
       end
     end
+  end
+
+  # A grammar tagged `@engine lr`/`@engine glr` never had its left
+  # recursion rewritten (`Grammar.Analysis` only does that for `:peg` --
+  # see `Aether.Grammar`'s own moduledoc); this is checked here, not left
+  # to surface as a runtime hang, since `use Ichor` already raises a
+  # `CompileError` for other grammar problems at this same point.
+  def generate(%Aether.Grammar{engine: engine}, _actions_module) do
+    raise CompileError,
+      description:
+        "this grammar is tagged @engine #{engine} -- Grammar.Native only compiles @engine peg grammars; use Grammar.LR/Grammar.GLR instead"
   end
 end

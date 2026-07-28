@@ -36,6 +36,7 @@ defmodule Ichor.ABNF.Actions do
   @behaviour Ichor.Actions
 
   alias Grammar.IR
+  alias Ichor.Toolkit.Result
 
   # ---- leaf tokens -----------------------------------------------------
 
@@ -229,12 +230,7 @@ defmodule Ichor.ABNF.Actions do
   # RFC 7405's "=/" incremental-alternatives extension in source order --
 
   defp build_ruleset(rules) do
-    Enum.reduce_while(rules, {:ok, %{}}, fn {name, op, ir}, {:ok, acc} ->
-      case merge_rule(acc, name, op, ir) do
-        {:ok, acc} -> {:cont, {:ok, acc}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
+    Result.reduce_ok(rules, %{}, fn {name, op, ir}, acc -> merge_rule(acc, name, op, ir) end)
   end
 
   defp merge_rule(acc, name, :assign, ir) do

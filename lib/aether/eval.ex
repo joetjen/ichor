@@ -22,6 +22,7 @@ defmodule Aether.Eval do
   alias Aether.Reader
   alias Grammar.IR
   alias Ichor.Error
+  alias Ichor.Toolkit.Result
 
   @predefined [:DIGIT, :ALPHA, :ALNUM, :SPACE, :HEX]
 
@@ -59,9 +60,11 @@ defmodule Aether.Eval do
       tokens: %{},
       token_order: [],
       rules: %{},
+      rule_order: [],
       anon_by_key: %{},
       anon_counter: 0,
-      anon_tokens: MapSet.new()
+      anon_tokens: MapSet.new(),
+      refiners: %{}
     }
   end
 
@@ -90,21 +93,43 @@ defmodule Aether.Eval do
   # ---- definitions, in file order ----------------------------------------
 
   defp process_defs(defs, state) do
-    Enum.reduce_while(defs, {:ok, state}, fn
-      {:token, name, cst, pos}, {:ok, state} ->
-        with {:ok, ir, state} <- convert(cst, :token, state),
-             {:ok, state} <- register_token(state, name, ir, pos) do
-          {:cont, {:ok, state}}
-        else
-          {:error, _} = err -> {:halt, err}
+    Result.reduce_ok(defs, state, fn
+      {:token, name, cst, pos}, state ->
+        with {:ok, ir, state} <- convert(cst, :token, state) do
+          register_token(state, name, ir, pos)
         end
 
-      {:rule, name, cst, _pos}, {:ok, state} ->
+      {:rule, name, cst, _pos}, state ->
         case convert(cst, :rule, state) do
-          {:ok, ir, state} -> {:cont, {:ok, register_rule(state, name, ir)}}
-          {:error, _} = err -> {:halt, err}
+          {:ok, ir, state} -> {:ok, register_rule(state, name, ir)}
+          {:error, _} = err -> err
         end
+
+      {:keywords, base_name, table, pos}, state ->
+        register_refiner(state, base_name, {:keywords, table}, pos)
+
+      {:refine, token_name, mod_str, fun_str, possible, pos}, state ->
+        module = Module.concat(String.split(mod_str, "."))
+        function = String.to_atom(fun_str)
+        register_refiner(state, token_name, {:custom, module, function, possible}, pos)
     end)
+  end
+
+  # `@keywords`/`@refine` both reclassify matches of the *same* base
+  # token, so only one refiner per token makes sense -- a second one
+  # would just silently shadow the first, almost certainly not what the
+  # grammar author meant.
+  defp register_refiner(state, token_name, refiner, pos) do
+    if Map.has_key?(state.refiners, token_name) do
+      {:error,
+       err_at(
+         state,
+         pos,
+         "#{token_name} already has a @keywords/@refine rule -- only one is allowed per token"
+       )}
+    else
+      {:ok, %{state | refiners: Map.put(state.refiners, token_name, refiner)}}
+    end
   end
 
   # Predefined names never went into `Aether.Reader`'s ordinary
@@ -147,7 +172,8 @@ defmodule Aether.Eval do
     end
   end
 
-  defp register_rule(state, name, ir), do: %{state | rules: Map.put(state.rules, name, ir)}
+  defp register_rule(state, name, ir),
+    do: %{state | rules: Map.put(state.rules, name, ir), rule_order: state.rule_order ++ [name]}
 
   # ---- predefined-token override/use bookkeeping ---------------------------
 
@@ -200,6 +226,21 @@ defmodule Aether.Eval do
   defp convert({:ref, name, pos}, _context, state) do
     state = mark_predefined_used(state, name, pos)
     {:ok, IR.rule_ref(name, span(pos)), state}
+  end
+
+  defp convert({:native, mod_str, fun_str, deps, hint, pos}, :token, state) do
+    module = Module.concat(String.split(mod_str, "."))
+    function = String.to_atom(fun_str)
+    nullable = if is_nil(hint.nullable), do: false, else: hint.nullable
+    {:ok, IR.custom_lexeme(module, function, deps, nullable, span(pos)), state}
+  end
+
+  defp convert({:native, mod_str, fun_str, deps, hint, pos}, :rule, state) do
+    module = Module.concat(String.split(mod_str, "."))
+    function = String.to_atom(fun_str)
+    nullable = if is_nil(hint.nullable), do: false, else: hint.nullable
+    leading = hint.leading || deps
+    {:ok, IR.custom(module, function, deps, nullable, leading, span(pos)), state}
   end
 
   defp convert({:capture, name, inner}, context, state) do
@@ -267,29 +308,16 @@ defmodule Aether.Eval do
   end
 
   defp convert_list(csts, context, state) do
-    Enum.reduce_while(csts, {:ok, [], state}, fn cst, {:ok, acc, state} ->
-      case convert(cst, context, state) do
-        {:ok, ir, state} -> {:cont, {:ok, [ir | acc], state}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
-    |> case do
-      {:ok, acc, state} -> {:ok, Enum.reverse(acc), state}
-      {:error, _} = err -> err
-    end
+    Result.map_ok(csts, state, fn cst, state -> convert(cst, context, state) end)
   end
 
   defp convert_seq_terms(terms, context, state) do
-    Enum.reduce_while(terms, {:ok, [], state}, fn {cst, suppress}, {:ok, acc, state} ->
+    Result.map_ok(terms, state, fn {cst, suppress}, state ->
       case convert(cst, context, state) do
-        {:ok, ir, state} -> {:cont, {:ok, [{ir, suppress} | acc], state}}
-        {:error, _} = err -> {:halt, err}
+        {:ok, ir, state} -> {:ok, {ir, suppress}, state}
+        {:error, _} = err -> err
       end
     end)
-    |> case do
-      {:ok, acc, state} -> {:ok, Enum.reverse(acc), state}
-      {:error, _} = err -> err
-    end
   end
 
   # Splicing itself can never fail (every term is already converted IR by
@@ -813,10 +841,13 @@ defmodule Aether.Eval do
       root: rg.root,
       skip: skip,
       case_insensitive: rg.case_insensitive,
+      engine: rg.engine,
       tokens: tokens,
       token_order: token_order,
       anon_tokens: state.anon_tokens,
       rules: state.rules,
+      rule_order: state.rule_order,
+      refiners: state.refiners,
       source: rg.source,
       file: rg.file
     }
@@ -842,8 +873,18 @@ defmodule Aether.Eval do
            "@skip names undefined token #{inspect(grammar.skip)}"
          )}
 
+      (dangling = dangling_refiner_base(grammar)) != nil ->
+        {:error,
+         err_at(rg, {1, 1}, "@keywords/@refine names undefined token #{inspect(dangling)}")}
+
       true ->
         {:ok, grammar}
     end
+  end
+
+  defp dangling_refiner_base(grammar) do
+    Enum.find_value(grammar.refiners, fn {base_name, _refiner} ->
+      if Map.has_key?(grammar.tokens, base_name), do: nil, else: base_name
+    end)
   end
 end

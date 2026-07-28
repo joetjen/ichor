@@ -1,0 +1,23 @@
+@grammar "lex"
+@root program
+@skip WS
+
+WS     := [ \t\n]+
+WORD   := [a-zA-Z_][a-zA-Z0-9_]*
+NUMBER := [0-9]+
+SLASH  := "/" @refine("KeywordsTest.SlashDisambiguator", "refine", DIV, REGEX_START)
+
+; A plain table lookup, the common case @refine's general escape hatch
+; exists for: WORD's own raw text decides whether it's really a keyword,
+; with no lookbehind needed at all.
+@keywords WORD { "if" -> KEYWORD_IF, "return" -> KEYWORD_RETURN }
+
+; `SLASH` is never referenced by an ordinary rule -- only the names
+; `@refine` reclassifies it *to* (`DIV`/`REGEX_START`) are -- so this
+; otherwise-unused rule is only here to keep `SLASH` in the lexer's
+; maximal-munch candidate set (`Grammar.VM.lexable_token_order/1` only
+; looks at what a grammar's *rules* reference).
+slash_ref := SLASH
+
+item    := KEYWORD_IF | KEYWORD_RETURN | WORD | NUMBER | DIV | REGEX_START
+program := item item*

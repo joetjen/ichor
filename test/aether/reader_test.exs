@@ -86,6 +86,25 @@ defmodule Aether.ReaderTest do
 
       assert grammar.skip_mode == {:custom, :TRIVIA}
     end
+
+    test "@engine defaults to :peg when omitted" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        r := "a"
+        """)
+
+      assert grammar.engine == :peg
+    end
+
+    test "@engine lr/@engine glr are recorded" do
+      lr = ok!("@grammar \"t\"\n@root r\n@engine lr\nr := \"a\"\n")
+      glr = ok!("@grammar \"t\"\n@root r\n@engine glr\nr := \"a\"\n")
+
+      assert lr.engine == :lr
+      assert glr.engine == :glr
+    end
   end
 
   describe "reader-level errors still fire with today's messages/positions" do
@@ -107,6 +126,16 @@ defmodule Aether.ReaderTest do
         """)
 
       assert error.message =~ "@skip/@noskip may only be given once"
+    end
+
+    test "@engine given twice is rejected" do
+      error = fails("@grammar \"t\"\n@root r\n@engine lr\n@engine glr\nr := \"a\"\n")
+      assert error.message =~ "@engine may only be given once"
+    end
+
+    test "an unknown @engine name is rejected" do
+      error = fails("@grammar \"t\"\n@root r\n@engine bison\nr := \"a\"\n")
+      assert error.message =~ "unknown @engine"
     end
 
     test "a duplicate ordinary token name is rejected" do
@@ -157,6 +186,77 @@ defmodule Aether.ReaderTest do
         """)
 
       assert grammar.defs |> Enum.count(&match?({:token, :DIGIT, _, _}, &1)) == 2
+    end
+  end
+
+  describe "@native(...)/@hint(...)" do
+    test "parses with no @hint, leaving both facts nil (Eval resolves the defaults)" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        primary := "x"
+        r := @native("M", "f", primary)
+        """)
+
+      assert {:rule, :r, {:native, "M", "f", [:primary], hint, _pos}, _def_pos} =
+               List.keyfind(grammar.defs, :r, 1)
+
+      assert hint == %{nullable: nil, leading: nil}
+    end
+
+    test "parses an explicit @hint" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        primary := "x"
+        r := @native("M", "f", primary) @hint(nullable: true, leading: (primary))
+        """)
+
+      assert {:rule, :r, {:native, "M", "f", [:primary], hint, _pos}, _def_pos} =
+               List.keyfind(grammar.defs, :r, 1)
+
+      assert hint == %{nullable: true, leading: [:primary]}
+    end
+
+    test "@native is also parseable inside a token body (a Grammar.IR.CustomLexeme, once Eval runs)" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        FOO := @native("M", "f")
+        r := "x"
+        """)
+
+      assert {:token, :FOO, {:native, "M", "f", [], _hint, _pos}, _def_pos} =
+               List.keyfind(grammar.defs, :FOO, 1)
+    end
+
+    test "leading: is rejected inside a token body -- left-recursion-cycle detection is rule-level only" do
+      error =
+        fails(~S"""
+        @grammar "t"
+        @root r
+        primary := "x"
+        FOO := @native("M", "f", primary) @hint(leading: (primary))
+        r := "x"
+        """)
+
+      assert error.message =~ "leading: is only meaningful for a rule-position @native(...)"
+    end
+
+    test "@hint's leading: may only name an already-declared @native dependency" do
+      error =
+        fails(~S"""
+        @grammar "t"
+        @root r
+        primary := "x"
+        other := "y"
+        r := @native("M", "f", primary) @hint(leading: (other))
+        """)
+
+      assert error.message =~ "may only name a rule already listed as an @native(...) dependency"
     end
   end
 end

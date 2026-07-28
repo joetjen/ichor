@@ -1,0 +1,14 @@
+@grammar "peg_gap_glr"
+@root top
+@engine glr
+@noskip
+
+; Identical rules to peg_gap_peg.aether -- only @engine differs. Under
+; GLR, `rule`'s two alternatives fork at the table's reduce/reduce
+; conflict; the "A A" branch dies once `top`'s own trailing A has
+; nothing left, but the "A" branch survives, succeeding where plain PEG
+; provably cannot on the same grammar shape.
+A := "a"
+
+rule := A A | A
+top := rule A

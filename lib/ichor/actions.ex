@@ -14,6 +14,7 @@ defmodule Ichor.Actions do
   """
 
   alias Ichor.{Capture, Error, Node}
+  alias Ichor.Toolkit.Result
 
   @type context :: term()
   @type captures :: %{optional(atom()) => Capture.t() | [Capture.t()]}
@@ -41,27 +42,19 @@ defmodule Ichor.Actions do
   @spec eval_all(captures(), context()) ::
           {:ok, %{optional(atom()) => term()}, context()} | {:error, Error.t()}
   def eval_all(captures, context) do
-    Enum.reduce_while(captures, {:ok, %{}, context}, fn {name, cap_or_list}, {:ok, acc, ctx} ->
-      case eval_one(cap_or_list, ctx) do
-        {:ok, value, ctx} -> {:cont, {:ok, Map.put(acc, name, value), ctx}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
+    case Result.reduce_ok(captures, {%{}, context}, fn {name, cap_or_list}, {acc, ctx} ->
+           case eval_one(cap_or_list, ctx) do
+             {:ok, value, ctx} -> {:ok, {Map.put(acc, name, value), ctx}}
+             {:error, _} = err -> err
+           end
+         end) do
+      {:ok, {acc, ctx}} -> {:ok, acc, ctx}
+      {:error, _} = err -> err
+    end
   end
 
   defp eval_one(caps, ctx) when is_list(caps) do
-    result =
-      Enum.reduce_while(caps, {:ok, [], ctx}, fn cap, {:ok, acc, ctx} ->
-        case cap.eval.(ctx) do
-          {:ok, value, ctx} -> {:cont, {:ok, [value | acc], ctx}}
-          {:error, _} = err -> {:halt, err}
-        end
-      end)
-
-    case result do
-      {:ok, acc, ctx} -> {:ok, Enum.reverse(acc), ctx}
-      {:error, _} = err -> err
-    end
+    Result.map_ok(caps, ctx, fn cap, ctx -> cap.eval.(ctx) end)
   end
 
   defp eval_one(%Capture{} = cap, ctx), do: cap.eval.(ctx)

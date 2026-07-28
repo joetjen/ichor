@@ -128,6 +128,51 @@ defmodule Aether.EvalTest do
     end
   end
 
+  describe "@native(...)/@hint(...) hint defaults" do
+    test "with no @hint, nullable defaults to false and leading defaults to the deps list" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        primary := "x"
+        r := @native("M", "f", primary)
+        """)
+
+      assert %IR.Custom{
+               module: M,
+               function: :f,
+               deps: [:primary],
+               nullable: false,
+               leading: [:primary]
+             } =
+               grammar.rules[:r]
+    end
+
+    test "an explicit @hint overrides both defaults" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        primary := "x"
+        r := @native("M", "f", primary) @hint(nullable: true, leading: ())
+        """)
+
+      assert %IR.Custom{nullable: true, leading: []} = grammar.rules[:r]
+    end
+
+    test "the module string resolves to a real module reference" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        primary := "x"
+        r := @native("Prolog.Operators", "parse_infix", primary)
+        """)
+
+      assert %IR.Custom{module: Prolog.Operators, function: :parse_infix} = grammar.rules[:r]
+    end
+  end
+
   describe "validation" do
     test "@root naming an undefined rule is rejected" do
       error =

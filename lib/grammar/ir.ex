@@ -27,6 +27,8 @@ defmodule Grammar.IR do
     Capture,
     CharClass,
     Choice,
+    Custom,
+    CustomLexeme,
     Indent,
     Literal,
     NotPred,
@@ -53,6 +55,8 @@ defmodule Grammar.IR do
           | RuleRef.t()
           | Indent.t()
           | Capture.t()
+          | Custom.t()
+          | CustomLexeme.t()
 
   @doc """
   Ordered sequence of sub-expressions.
@@ -211,6 +215,67 @@ defmodule Grammar.IR do
     do: %Capture{name: name, expr: expr, meta: meta}
 
   @doc """
+  `@native(...)` escape hatch: delegates matching to `module.function`
+  (an `Ichor.CustomRule` implementation) instead of ordinary combinators.
+  `deps` are the only other rules it may call back into; `nullable`/
+  `leading` are author-supplied stand-ins for facts `Grammar.Analysis`
+  would otherwise compute structurally, since this node's body is opaque.
+
+      iex> Grammar.IR.custom(Prolog.Operators, :parse_infix, [:primary])
+      %Grammar.IR.Custom{
+        module: Prolog.Operators,
+        function: :parse_infix,
+        deps: [:primary],
+        nullable: false,
+        leading: [:primary],
+        meta: %Grammar.IR.Meta{}
+      }
+
+  """
+  @spec custom(module(), atom(), [atom()], boolean(), [atom()], Grammar.IR.Meta.t()) :: Custom.t()
+  def custom(
+        module,
+        function,
+        deps,
+        nullable \\ false,
+        leading \\ nil,
+        meta \\ %Grammar.IR.Meta{}
+      ) do
+    %Custom{
+      module: module,
+      function: function,
+      deps: deps,
+      nullable: nullable,
+      leading: leading || deps,
+      meta: meta
+    }
+  end
+
+  @doc """
+  `@native(...)` escape hatch at *token* position: a token whose entire
+  body is `module.function` (an `Ichor.CustomLexeme` implementation).
+  `deps` names the rules it may call back into via the re-lex-and-match
+  primitive; `nullable` is the same author-supplied stand-in `custom/6`
+  uses. No `leading` here -- left-recursion-cycle detection is a
+  rule-level concept only.
+
+      iex> Grammar.IR.custom_lexeme(Shell.Heredoc, :scan, [])
+      %Grammar.IR.CustomLexeme{
+        module: Shell.Heredoc,
+        function: :scan,
+        deps: [],
+        nullable: false,
+        meta: %Grammar.IR.Meta{}
+      }
+
+  """
+  @spec custom_lexeme(module(), atom(), [atom()], boolean(), Grammar.IR.Meta.t()) ::
+          CustomLexeme.t()
+  def custom_lexeme(module, function, deps, nullable \\ false, meta \\ %Grammar.IR.Meta{}) do
+    %CustomLexeme{module: module, function: function, deps: deps, nullable: nullable, meta: meta}
+  end
+
+  @doc """
   The immediate sub-expressions of a node, or `[]` for a leaf. Every stage
   that walks a whole grammar (the analysis pass, `Grammar.VM`, native
   codegen) shares this instead of re-deriving "what are this node's
@@ -238,4 +303,6 @@ defmodule Grammar.IR do
   def children(%CharClass{}), do: []
   def children(%Any{}), do: []
   def children(%RuleRef{}), do: []
+  def children(%Custom{}), do: []
+  def children(%CustomLexeme{}), do: []
 end

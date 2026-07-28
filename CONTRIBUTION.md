@@ -91,4 +91,4 @@ input/expected/actual triple.
 ## License
 
 By contributing, you agree that your contributions will be licensed
-under the project's [MIT license](LICENSE.txt).
+under the project's [MIT license](LICENSE).

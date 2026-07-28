@@ -1,0 +1,17 @@
+@grammar "interp_lr"
+@root program
+@engine lr
+@noskip
+
+; Same rules as interp.aether -- proves a Grammar.IR.CustomLexeme
+; dependency (STRING's @native(...) re-lexing into expr) works under
+; Grammar.Native.LR too: Grammar.Native.RuleCompiler's ordinary per-rule
+; PEG functions get spliced in alongside the compiled LR state
+; functions, unused by parse/run, present only so JS.StringInterp's
+; own rule_matchers.expr reference resolves.
+NUMBER := [0-9]+
+PLUS   := "+"
+STRING := @native("JS.StringInterp", "scan", expr) @hint(nullable: false)
+
+expr    := NUMBER (PLUS n:NUMBER)*
+program := STRING

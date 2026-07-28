@@ -69,4 +69,23 @@ defmodule Markdown.ActionsTest do
       assert {:ok, "<h1>A</h1>\n<p>B</p>\n<ul><li>c</li></ul>"} = run(g, "# A\n\nB\n\n- c")
     end
   end
+
+  describe "thematic breaks, via a positive lookahead (&NEWLINE)" do
+    test "three dashes alone on a line become <hr>, between two paragraphs", %{grammar: g} do
+      assert {:ok, "<p>one</p>\n<hr>\n<p>two</p>"} = run(g, "one\n\n---\n\ntwo")
+    end
+
+    test "more than three dashes still counts", %{grammar: g} do
+      assert {:ok, "<hr>\n<p>two</p>"} = run(g, "-----\n\ntwo")
+    end
+
+    test "a single dash is a list item, not a thematic break -- unaffected", %{grammar: g} do
+      assert {:ok, "<ul><li>item</li></ul>"} = run(g, "- item")
+    end
+
+    test "the documented gap: a thematic break as the very last line, with no trailing newline, isn't recognized",
+         %{grammar: g} do
+      assert {:error, _} = run(g, "one\n\n---")
+    end
+  end
 end

@@ -44,7 +44,7 @@ defmodule Ichor.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      files: ~w(lib priv/grammar .formatter.exs mix.exs README.md CHANGELOG.md LICENSE.txt)
+      files: ~w(lib priv/grammar .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 
@@ -69,7 +69,7 @@ defmodule Ichor.MixProject do
       "guides/aether/AETHER_CHEATSHEET.md",
       "CHANGELOG.md",
       "CONTRIBUTION.md",
-      "LICENSE.txt"
+      "LICENSE"
     ]
   end
 

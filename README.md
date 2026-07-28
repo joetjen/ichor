@@ -46,17 +46,19 @@ through that same Actions module.
   .aether source                     ABNF / BNF / EBNF / PEG source
         │                                        │
         ▼                                        ▼
-  Aether.Lexer + Aether.Parser         Ichor.ABNF / .BNF / .EBNF.* / .PEG
+  Aether.Reader + Aether.Eval          Ichor.ABNF / .BNF / .EBNF.* / .PEG
         │                                        │
         └───────────────┬────────────────────────┘
                          ▼
                   Grammar.IR (+ Grammar.Analysis)
                          │
+              @engine peg | lr | glr
+                         │
            ┌─────────────┴─────────────┐
            ▼                           ▼
-     Grammar.VM                  Grammar.Native
-  (bytecode interpreter)      (compile-time codegen,
-                                `use Ichor`)
+       Grammar.VM                Grammar.Native
+  (bytecode interpreter,     (compile-time codegen,
+   PEG / LR / GLR engines)    PEG / LR / GLR engines)
            │                           │
            └─────────────┬─────────────┘
                          ▼
@@ -64,42 +66,73 @@ through that same Actions module.
         (your module: evaluate, build, execute, transpile...)
 ```
 
-Every Aether grammar compiles to a genuine two-stage **Lexer -> Parser**,
-never a single scannerless pass: tokens (`ALL_CAPS` names) are matched
-by *maximal munch* over raw characters — longest match wins, ties
-broken by declaration order — producing a token stream; rules
-(`snake-case` names) then run over that stream as an ordered-choice
-(PEG-style) parser, first alternative to match wins. This split is
-structural, not an implementation detail — it's what lets both backends
-agree byte-for-byte on what a grammar means.
+Every Aether grammar compiles to a genuine multi-stage pipeline, never a
+single scannerless pass: tokens (`ALL_CAPS` names) are matched by
+*maximal munch* over raw characters — longest match wins, ties broken by
+declaration order — producing a token stream, optionally reclassified
+by `@keywords`/`@refine` (e.g. distinguishing a keyword from an
+ordinary identifier, or JavaScript's regex-literal-vs-division
+ambiguity); rules (`snake-case` names) then run over that stream as an
+ordered-choice (PEG-style, the default) parser, or — for a grammar
+tagged `@engine lr`/`@engine glr` — a deterministic shift-reduce or
+genuine Tomita-style GLR parser instead, for CFG shapes plain PEG can't
+express (left recursion, genuine ambiguity). This split is structural,
+not an implementation detail — it's what lets every backend/engine
+combination agree byte-for-byte on what a grammar means. A rule or token
+can also opt out of all of this entirely via `@native(...)`, dispatching
+to your own Elixir callback for the rare case a grammar's meaning is
+mutated mid-file by something declared earlier (Prolog's `op/3`,
+heredocs, string interpolation).
 
 ## Components
 
 - **[Aether](guides/aether/AETHER.md)** — Ichor's own grammar language.
   Tokens vs. rules, `@skip`/`@noskip` whitespace handling,
   `@indent`/`@samecol` for layout-sensitive languages, POSIX character
-  classes, and a `/pattern/` regex-literal shorthand for token bodies.
-  See `Aether.Lexer` and `Aether.Parser`.
+  classes, a `/pattern/` regex-literal shorthand for token bodies,
+  `@keywords`/`@refine` for post-tokenization reclassification,
+  `@engine peg | lr | glr` to pick the parsing algorithm, and
+  `@native(...)`/`@hint(...)` as an escape hatch at rule or token
+  position for grammars mutated mid-file (runtime-mutable operator
+  precedence, heredocs, string interpolation). See `Aether.Reader` and
+  `Aether.Eval`.
 - **`Grammar.IR`** — the normalized AST every front-end compiles to and
-  every backend consumes: 14 node types (`Seq`, `Choice`, `Star`, `Plus`,
+  every backend consumes: 16 node types (`Seq`, `Choice`, `Star`, `Plus`,
   `Opt`, `Rep`, `AndPred`, `NotPred`, `Literal`, `CharClass`, `Any`,
-  `RuleRef`, `Indent`, `Capture`), each carrying source-location metadata.
+  `RuleRef`, `Indent`, `Capture`, `Custom`, `CustomLexeme`), each
+  carrying source-location metadata.
 - **`Grammar.Analysis`** — reference checks, a direct-left-recursion
-  rewrite (`A := A op b | base` becomes the iterative `A := base (op b)*`),
-  an empty-repetition hazard check, and a duplicate-alternative lint.
+  rewrite for `@engine peg` grammars (`A := A op b | base` becomes the
+  iterative `A := base (op b)*`; skipped for `lr`/`glr`, which want left
+  recursion, not a rewrite of it), an empty-repetition hazard check, and
+  a duplicate-alternative lint.
 - **`Grammar.VM`** — an interpreted backend: compiles a grammar to
-  LPeg-style bytecode and runs it against real input. No compilation
-  step beyond building the bytecode itself — good for grammars loaded
-  at runtime.
+  LPeg-style bytecode (PEG) or builds an SLR(1) table (`lr`/`glr`) and
+  runs it against real input. No compilation step beyond that — good for
+  grammars loaded at runtime. `Grammar.LR`/`Grammar.GLR` are the
+  standalone LR/GLR engines this dispatches to.
 - **`Grammar.Native`** — a compile-time backend: `use Ichor,
   grammar: ..., actions: ...` splices generated Elixir functions
-  straight into your module, skipping bytecode interpretation entirely.
-  Roughly 2x the VM backend's speed, at the cost of needing the grammar
-  at compile time.
+  straight into your module for whichever `@engine` the grammar
+  declares, skipping bytecode/table interpretation entirely — an
+  `@engine lr` grammar compiles to one Elixir function per automaton
+  state, a genuine Bison-style compiled parser.
 - **`Ichor.Actions`** — the behaviour connecting a parsed grammar to real
   behavior: `handle_rule/3`, `handle_token/3`, and an optional
   `finalize/1`, with a sensible default fallback for rules/tokens that
   need no custom handling.
+- **`Ichor.Backtrack`** — a generic lazy-search-plus-unification
+  substrate for logic-language evaluation models (SLD-resolution and
+  friends): `Ichor.Backtrack.Tree`'s lazy, depth-first `disjunction`/
+  `conjunction`/`once` combinators, and `Ichor.Backtrack.Bindings`'
+  substitution/unification over any term representation you supply.
+  Opt-in — nothing in Ichor's core ever calls it.
+- **`Ichor.Toolkit`** — small, IR-agnostic building blocks for a grammar
+  author's own downstream semantic analysis, type inference, or codegen
+  (`Fixpoint`, `Graph`, `Scope`, `TypeScheme`, `Codegen`, `Result`,
+  `Pratt`, `Layout`, `TermWalk`) — extracted from patterns Ichor's own
+  compiler internals had already hand-rolled more than once. Also
+  opt-in; see each module's own docs.
 - **Format importers** — `Ichor.ABNF` (RFC 5234 + RFC 7405), `Ichor.BNF`
   (classical, ALGOL 60 Report convention), `Ichor.EBNF.ISO` (ISO/IEC
   14977), `Ichor.EBNF.W3C` (the notation the XML 1.0 spec's own
@@ -140,7 +173,8 @@ end
   Ichor's features, building up to a complete, working calculator.
 - **[Examples](guides/EXAMPLES.md)** — worked examples across a range of
   language shapes: a LISP dialect, YAML, a log-query language, SQL,
-  HTTP, regex, Forth, and a Markdown-to-HTML transpiler.
+  HTTP, regex, Forth, a Markdown-to-HTML transpiler, and Prolog (real
+  clause/`op/3` syntax feeding `Ichor.Backtrack`).
 - **[Cheatsheet](guides/CHEATSHEET.md)** — quick reference for common
   Ichor tasks.
 - **[Aether tutorial](guides/aether/TUTORIAL.md)** and
@@ -162,4 +196,4 @@ See [CONTRIBUTION.md](CONTRIBUTION.md) for how to propose changes, and
 
 ## License
 
-MIT — see [LICENSE.txt](LICENSE.txt).
+MIT — see [LICENSE](LICENSE).

@@ -1,0 +1,28 @@
+document      ::= element
+element       ::= EmptyElemTag | STag content ETag
+STag          ::= '<' Name Attribute* S? '>'
+ETag          ::= '</' Name S? '>'
+EmptyElemTag  ::= '<' Name Attribute* S? '/>'
+Attribute     ::= S Name Eq AttValue
+content       ::= CharData? (element CharData?)*
+NameStartChar ::= [a-zA-Z] | '_'
+NameChar      ::= NameStartChar | [0-9] | '-' | '.'
+Name          ::= NameStartChar NameChar*
+Eq            ::= S? '=' S?
+AttValue      ::= '"' [^<&"]* '"'
+/* Deviates from the real spec's own `CharData ::= [^<&]*`: Ichor's
+   tokenizer picks one canonical tokenization per position by maximal
+   munch, globally, with no notion of "inside a tag" vs "in content" --
+   real XML's own lexer is context-sensitive exactly here. `[^<&]+`
+   would tie with (or, worse, outright beat -- it doesn't exclude `>`/
+   `/`/`"`/`=` either) Name/tag-syntax tokens for ordinary text like
+   "hello", tokenizing it as Name instead of CharData. Keeping
+   CharData's own characters completely disjoint from Name's (no
+   letters or `_` at all) sidesteps the clash structurally instead of
+   relying on declaration-order tie-breaking, which can't satisfy both
+   "Name should win right after `<`" and "CharData should win between
+   tags" for the exact same text at once. No literal space either, for
+   the identical reason relative to `S` -- content in this fixture is
+   digits/punctuation only, never whitespace. */
+CharData      ::= [0-9.,!?]+
+S             ::= [ \t\n]+

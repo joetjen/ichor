@@ -50,6 +50,8 @@ defmodule Markdown.Actions do
   def handle_token(:PLAIN_CHAR, text, _ctx), do: {:ok, text}
 
   @impl true
+  def handle_rule(:thematic_break, _captures, ctx), do: {:ok, "<hr>", ctx}
+
   def handle_rule(:document, %{block: blocks}, ctx) do
     with {:ok, %{block: htmls}, ctx} <- Ichor.Actions.eval_all(%{block: blocks}, ctx) do
       {:ok, Enum.join(htmls, "\n"), ctx}

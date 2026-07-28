@@ -6,12 +6,12 @@ defmodule Grammar.VM do
   Two genuinely separate compiled programs are involved, matching
   Aether's own "every grammar compiles to a Lexer feeding a Parser, never
   a scannerless single pass" design: `Grammar.VM.CharCompiler` +
-  `Grammar.VM.Lexer` turn the input string into a token stream (maximal
+  `Grammar.VM.Tokenizer` turn the input string into a token stream (maximal
   munch over every declared token); `Grammar.VM.RuleCompiler` +
   `Grammar.VM.TokenInterpreter` then run the rules over *that* stream,
   never over raw characters -- building a raw capture tree as they go.
 
-  `parse/2` is a bare recognizer (does `grammar.root` match `input`, full
+  `parse/3` is a bare recognizer (does `grammar.root` match `input`, full
   stop) with no `Ichor.Actions` involved. `run/4` is the actions-aware
   entry point: it matches, then hands the raw capture tree to
   `Ichor.Actions.evaluate/5` for a given Actions module and initial
@@ -22,10 +22,29 @@ defmodule Grammar.VM do
   (loading a standard-library file one top-level form at a time, each one
   threading context into the next, is the motivating case) -- most
   grammars only ever need `run/4`.
+
+  `context` reaches the *match* phase too now (`parse/3`'s third
+  argument, `run/4`'s `initial_context`, `run_sequence/4`'s
+  per-form-accumulated context for *rule*-level matching), read-only --
+  the one thing that ever consults it there is a `Grammar.IR.Custom`
+  `@native(...)` node, via `Ichor.CustomRule.match/4`, or a
+  `Grammar.IR.CustomLexeme` one via `Ichor.CustomLexeme.scan/3`. Nothing
+  else in `Grammar.VM.TokenInterpreter`/`Grammar.VM.Tokenizer` reads it; only
+  `Ichor.Actions.evaluate/5` ever produces a *new* one.
+
+  One real gap for `CustomLexeme` specifically: `run_sequence/4`
+  tokenizes the *entire* input once, up front, with only
+  `initial_context` -- unlike rule-level matching (re-run per top-level
+  form, seeing that form's own accumulated context), a token that reads
+  `context` can't see anything a *later* form's own evaluation produced.
+  Fine for heredocs/string-interpolation (context there is either unused
+  or fixed for the whole file); a hazard only for something
+  `\\catcode`-like that needs re-tokenization as context evolves
+  mid-sequence -- not something `run_sequence/4` supports today.
   """
 
   alias Grammar.IR
-  alias Grammar.VM.{CharCompiler, Lexer, RuleCompiler, TokenInterpreter}
+  alias Grammar.VM.{CharCompiler, RuleCompiler, TokenInterpreter, Tokenizer}
   alias Ichor.{Actions, Error}
 
   @doc """
@@ -34,9 +53,10 @@ defmodule Grammar.VM do
   tokens consumed on success -- a bare recognizer result, no
   `Ichor.Actions` involved.
   """
-  @spec parse(Aether.Grammar.t(), String.t()) :: {:ok, non_neg_integer()} | {:error, Error.t()}
-  def parse(%Aether.Grammar{} = grammar, input) do
-    with {:ok, pos, _raw_captures} <- match(grammar, input) do
+  @spec parse(Aether.Grammar.t(), String.t(), term()) ::
+          {:ok, non_neg_integer()} | {:error, Error.t()}
+  def parse(%Aether.Grammar{} = grammar, input, context \\ nil) do
+    with {:ok, pos, _raw_captures} <- match(grammar, input, context) do
       {:ok, pos}
     end
   end
@@ -49,7 +69,7 @@ defmodule Grammar.VM do
   @spec run(Aether.Grammar.t(), String.t(), module(), Actions.context()) ::
           {:ok, term()} | {:error, Error.t() | [Error.t()]}
   def run(%Aether.Grammar{} = grammar, input, actions_module, initial_context \\ nil) do
-    with {:ok, _pos, raw_captures} <- match(grammar, input),
+    with {:ok, _pos, raw_captures} <- match(grammar, input, initial_context),
          {:ok, value, _context} <-
            Actions.evaluate(
              grammar.root,
@@ -72,12 +92,28 @@ defmodule Grammar.VM do
   @spec run_sequence(Aether.Grammar.t(), String.t(), module(), Actions.context()) ::
           {:ok, [term()], Actions.context()} | {:error, Error.t() | [Error.t()]}
   def run_sequence(%Aether.Grammar{} = grammar, input, actions_module, initial_context) do
+    with {:ok, grammar} <- check_engine(grammar) do
+      do_run_sequence_toplevel(grammar, input, actions_module, initial_context)
+    end
+  end
+
+  defp do_run_sequence_toplevel(grammar, input, actions_module, initial_context) do
     capture_shapes = RuleCompiler.capture_shapes(grammar)
-    char_program = CharCompiler.compile(grammar.tokens)
+    {char_program, custom_lexemes} = CharCompiler.compile(grammar.tokens)
     rule_program = RuleCompiler.compile(grammar)
     entry = Map.fetch!(rule_program.entry_points, grammar.root)
 
-    with {:ok, tokens} <- Lexer.tokenize(char_program, lexable_token_order(grammar), input) do
+    with {:ok, input} <- Grammar.Source.validate(input),
+         {:ok, raw_tokens} <-
+           Tokenizer.tokenize(
+             char_program,
+             custom_lexemes,
+             lexable_token_order(grammar),
+             rule_program,
+             initial_context,
+             input
+           ),
+         {:ok, tokens} <- Grammar.Lexer.reclassify(raw_tokens, grammar.refiners) do
       do_run_sequence(
         rule_program,
         entry,
@@ -149,7 +185,7 @@ defmodule Grammar.VM do
          ctx,
          acc
        ) do
-    case TokenInterpreter.run_from(rule_program.instructions, entry, stream, pos) do
+    case TokenInterpreter.run_from(rule_program.instructions, entry, stream, pos, ctx) do
       {:ok, new_pos, raw_captures} ->
         case Actions.evaluate(grammar.root, raw_captures, actions_module, ctx, shapes) do
           {:ok, value, new_ctx} ->
@@ -177,15 +213,31 @@ defmodule Grammar.VM do
     end
   end
 
-  defp match(%Aether.Grammar{} = grammar, input) do
-    char_program = CharCompiler.compile(grammar.tokens)
+  defp match(%Aether.Grammar{} = grammar, input, context) do
+    with {:ok, grammar} <- check_engine(grammar) do
+      do_match(grammar, input, context)
+    end
+  end
 
-    with {:ok, tokens} <- Lexer.tokenize(char_program, lexable_token_order(grammar), input) do
+  defp do_match(grammar, input, context) do
+    {char_program, custom_lexemes} = CharCompiler.compile(grammar.tokens)
+    rule_program = RuleCompiler.compile(grammar)
+
+    with {:ok, input} <- Grammar.Source.validate(input),
+         {:ok, raw_tokens} <-
+           Tokenizer.tokenize(
+             char_program,
+             custom_lexemes,
+             lexable_token_order(grammar),
+             rule_program,
+             context,
+             input
+           ),
+         {:ok, tokens} <- Grammar.Lexer.reclassify(raw_tokens, grammar.refiners) do
       stream = List.to_tuple(tokens)
-      rule_program = RuleCompiler.compile(grammar)
       entry = Map.fetch!(rule_program.entry_points, grammar.root)
 
-      case TokenInterpreter.run(rule_program.instructions, entry, stream) do
+      case TokenInterpreter.run(rule_program.instructions, entry, stream, context) do
         {:ok, pos, raw_captures} when pos == tuple_size(stream) ->
           {:ok, pos, raw_captures}
 
@@ -241,6 +293,22 @@ defmodule Grammar.VM do
 
   defp collect_token_refs(ir, token_names, acc) do
     Enum.reduce(IR.children(ir), acc, &collect_token_refs(&1, token_names, &2))
+  end
+
+  # A grammar tagged `@engine lr`/`@engine glr` never had its left
+  # recursion rewritten (`Grammar.Analysis` only does that for `:peg` --
+  # see `Aether.Grammar`'s own moduledoc); running it through recursive
+  # descent would infinite-loop instead of failing cleanly, so this is
+  # checked up front rather than left to surface as a hang.
+  defp check_engine(%Aether.Grammar{engine: :peg} = grammar), do: {:ok, grammar}
+
+  defp check_engine(%Aether.Grammar{engine: engine}) do
+    {:error,
+     Error.new(
+       message:
+         "this grammar is tagged @engine #{engine} -- Grammar.VM only runs @engine peg grammars; use Grammar.LR/Grammar.GLR instead",
+       stage: :parser
+     )}
   end
 
   defp unexpected_token_error(stream, pos, input) do

@@ -1,0 +1,10 @@
+@grammar "interp"
+@root program
+@noskip
+
+NUMBER := [0-9]+
+PLUS   := "+"
+STRING := @native("JS.StringInterp", "scan", expr) @hint(nullable: false)
+
+expr    := NUMBER (PLUS n:NUMBER)*
+program := STRING

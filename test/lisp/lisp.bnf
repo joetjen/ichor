@@ -1,0 +1,15 @@
+<alpha-char> ::= 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z'
+<digit-char> ::= '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
+<symbol-start> ::= <alpha-char> | '_' | '+' | '-' | '*' | '/' | '<' | '>' | '=' | '!' | '?'
+<symbol-char> ::= <symbol-start> | <digit-char>
+<symbol-tail> ::= <symbol-char> <symbol-tail> | <symbol-char>
+<symbol> ::= <symbol-start> <symbol-tail> | <symbol-start>
+<number> ::= <digit-char> <number> | <digit-char>
+<str-char> ::= <alpha-char> | <digit-char> | ' ' | '.' | ','
+<string-body> ::= <str-char> <string-body> | <str-char>
+<string> ::= '"' <string-body> '"'
+<atom> ::= <number> | <symbol> | <string>
+<form-seq> ::= <form> ' ' <form-seq> | <form>
+<list> ::= '(' <form-seq> ')'
+<quote-form> ::= "'" <form>
+<form> ::= <list> | <quote-form> | <atom>

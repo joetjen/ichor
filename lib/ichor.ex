@@ -84,7 +84,13 @@ defmodule Ichor do
       end
 
     grammar = parse_and_analyze!(source, file)
-    body = Grammar.Native.generate(grammar, actions_module)
+
+    body =
+      case grammar.engine do
+        :peg -> Grammar.Native.generate(grammar, actions_module)
+        :lr -> Grammar.Native.LR.generate(grammar, actions_module)
+        :glr -> Grammar.Native.GLR.generate(grammar, actions_module)
+      end
 
     resource_attr =
       if external_resource do

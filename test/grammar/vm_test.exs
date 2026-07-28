@@ -213,4 +213,26 @@ defmodule Grammar.VMTest do
       assert {:error, _} = Grammar.VM.parse(grammar, "a: 1\n  b: 2")
     end
   end
+
+  describe "@engine mismatch guard" do
+    @glr_grammar ~S"""
+    @grammar "t"
+    @root r
+    @engine glr
+    r := "a"
+    """
+
+    test "Grammar.VM refuses to run a grammar tagged @engine glr" do
+      grammar = compile!(@glr_grammar)
+      assert {:error, error} = Grammar.VM.parse(grammar, "a")
+      assert error.message =~ "@engine glr"
+      assert error.message =~ "Grammar.LR/Grammar.GLR"
+    end
+
+    test "Grammar.VM.run_sequence/4 refuses it too" do
+      grammar = compile!(@glr_grammar)
+      assert {:error, error} = Grammar.VM.run_sequence(grammar, "a", Calculator.Actions, nil)
+      assert error.message =~ "@engine glr"
+    end
+  end
 end
