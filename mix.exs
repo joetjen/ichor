@@ -44,6 +44,7 @@ defmodule Ichor.MixProject do
   defp package do
     [
       licenses: ["MIT"],
+      links: %{"GitHub" => "https://github.com/joetjen/ichor"},
       files: ~w(lib priv/grammar .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
