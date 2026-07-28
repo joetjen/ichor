@@ -13,7 +13,7 @@ defmodule Grammar.IR.CustomLexeme do
   `{:call, name}` to jump into) and can't be composed inside a larger
   token expression. `deps` names the *rules* (never tokens) this
   callback may call back into via the re-lex-and-match primitive
-  `Ichor.CustomLexeme.match/3` receives. `nullable` is the same
+  `c:Ichor.CustomLexeme.scan/3` receives. `nullable` is the same
   author-supplied stand-in `Grammar.IR.Custom` uses, defaulting to
   `false`; there's no `leading` here since left-recursion-cycle
   detection is a rule-level concept only.

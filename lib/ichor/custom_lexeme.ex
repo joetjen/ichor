@@ -13,7 +13,7 @@ defmodule Ichor.CustomLexeme do
       position into some fixed original string (matching the convention
       every other char-level matcher in this codebase already uses:
       "what's left" rather than "where am I").
-    - `context` -- read-only, same meaning as `Ichor.CustomRule.match/4`'s
+    - `context` -- read-only, same meaning as `c:Ichor.CustomRule.match/4`'s
       -- whatever the previous top-level form evaluated to, or `nil`
       outside a sequence.
     - `rule_matchers` -- a map restricted to `@native(...)`'s declared

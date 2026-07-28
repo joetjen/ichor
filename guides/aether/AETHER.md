@@ -375,7 +375,7 @@ token's own definition:
 SLASH := "/" @refine("JS.SlashDisambiguator", "refine", DIV, REGEX_START)
 ```
 
-The callback (`Ichor.TokenRefiner.refine/4`: `raw_name`, `raw_text`,
+The callback (`c:Ichor.TokenRefiner.refine/4`: `raw_name`, `raw_text`,
 `pos :: {line, column}`, and `preceding` — every token already
 reclassified so far, in final form, which is what makes the
 lookbehind-dependent JS case work) returns `{:ok, new_name, value}` (the
@@ -403,7 +403,7 @@ expr := @native("Prolog.Grammar", "parse_term", primary) @hint(nullable: false, 
 allowed to call back into, via a `rule_matchers` map restricted to
 exactly those names — kept explicit so `Grammar.Analysis`'s reference
 check still sees this node's real dependencies even though its own body
-is opaque Elixir code. The callback (matching `Ichor.CustomRule.match/4`,
+is opaque Elixir code. The callback (matching `c:Ichor.CustomRule.match/4`,
 though it doesn't have to be named `match` — `@native`'s own second
 argument names it explicitly) is:
 
@@ -455,7 +455,7 @@ position gets:
 
 - `input` — the *remaining suffix* of the source text (not a position
   into some original string).
-- `context` — same meaning as `Ichor.CustomRule.match/4`'s.
+- `context` — same meaning as `c:Ichor.CustomRule.match/4`'s.
 - `rule_matchers` — `%{expr: (input -> {:ok, text, rest, capture} | :fail)}`
   for the example above: re-lexes `input` from scratch and matches the
   named rule, for a token that needs to recurse into full rule-level

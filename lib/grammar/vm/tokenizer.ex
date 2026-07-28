@@ -9,7 +9,7 @@ defmodule Grammar.VM.Tokenizer do
 
   `custom_lexemes` (from `Grammar.VM.CharCompiler.compile/1`) names the
   tokens whose entire body is a `Grammar.IR.CustomLexeme` -- these are
-  dispatched straight to `Ichor.CustomLexeme.scan/3` instead of run as
+  dispatched straight to `c:Ichor.CustomLexeme.scan/3` instead of run as
   bytecode, and can hand back a capture override (embedded in the
   resulting `Grammar.VM.Token.capture`) alongside their matched text.
   `rule_program`/`context` only exist to support that dispatch (building

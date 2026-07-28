@@ -27,8 +27,8 @@ defmodule Grammar.VM do
   argument, `run/4`'s `initial_context`, `run_sequence/4`'s
   per-form-accumulated context for *rule*-level matching), read-only --
   the one thing that ever consults it there is a `Grammar.IR.Custom`
-  `@native(...)` node, via `Ichor.CustomRule.match/4`, or a
-  `Grammar.IR.CustomLexeme` one via `Ichor.CustomLexeme.scan/3`. Nothing
+  `@native(...)` node, via `c:Ichor.CustomRule.match/4`, or a
+  `Grammar.IR.CustomLexeme` one via `c:Ichor.CustomLexeme.scan/3`. Nothing
   else in `Grammar.VM.TokenInterpreter`/`Grammar.VM.Tokenizer` reads it; only
   `Ichor.Actions.evaluate/5` ever produces a *new* one.
 

@@ -6,12 +6,12 @@ defmodule Ichor.Toolkit.Result do
   Ichor's own compiler internals before this existed: `build_ruleset/1`
   (duplicated near-verbatim across `Ichor.EBNF.ISO.Actions`,
   `Ichor.EBNF.W3C.Actions`, `Ichor.BNF.Actions`, `Ichor.ABNF.Actions`, and
-  `Ichor.PEG.Actions`), `Ichor.Backtrack.Bindings.unify_compound/5`'s
+  `Ichor.PEG.Actions`), `Ichor.Backtrack.Bindings`' own `unify_compound/5`
   inner reduce over zipped compound-term arguments (whose failure
-  sentinel is a bare `:fail`, not `{:error, _}`), `Aether.Eval.process_defs/2`,
-  and -- byte-for-byte identical to each other -- `Ichor.Actions.eval_one/2`'s
-  list-of-captures branch, `Aether.Eval.convert_list/3`, and
-  `Aether.Eval.convert_seq_terms/3`.
+  sentinel is a bare `:fail`, not `{:error, _}`), `Aether.Eval`'s own
+  `process_defs/2`, and -- byte-for-byte identical to each other --
+  `Ichor.Actions`' own `eval_one/2` list-of-captures branch, and
+  `Aether.Eval`'s own `convert_list/3` and `convert_seq_terms/3`.
 
   Elixir's stdlib has no `Enum`/`Result`-traverse equivalent to lean on
   here (unlike, say, Haskell's `Traversable` or Rust's

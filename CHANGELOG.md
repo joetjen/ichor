@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an escape hatch for grammar rules plain PEG can't express — most
   notably a runtime-mutable operator-precedence table (Prolog's `op/3`,
   Haskell fixity declarations, Coq/Agda/Lean mixfix notation),
-  dispatching to an author-supplied `Ichor.CustomRule.match/4`-shaped
+  dispatching to an author-supplied `c:Ichor.CustomRule.match/4`-shaped
   callback with access to the token stream, the current position, the
   grammar's own `context` (read-only, threaded via `run_sequence/4`
   across top-level forms), and `rule_matchers` restricted to the node's

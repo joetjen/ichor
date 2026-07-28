@@ -25,7 +25,7 @@ defmodule Grammar.VM.TokenInterpreter do
 
   `context` is threaded through every instruction purely so `{:custom,
   ...}` (a `Grammar.IR.Custom` `@native(...)` node) can hand it to
-  `Ichor.CustomRule.match/4` -- every other instruction ignores it. It's
+  `c:Ichor.CustomRule.match/4` -- every other instruction ignores it. It's
   read-only here: matching never produces a *new* context, only
   `Ichor.Actions.evaluate/5` does that, between top-level forms.
   """

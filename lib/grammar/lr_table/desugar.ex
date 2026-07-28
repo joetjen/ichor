@@ -23,16 +23,16 @@ defmodule Grammar.LRTable.Desugar do
   semantic.
 
   Reuses the exact same token/rule classification and implicit-capture
-  exclusion rules every other backend uses
-  (`Grammar.VM.RuleCompiler.token_names/1`/`.implicit_capture_exclusions/1`)
-  so a `@keywords`/`@refine` target name, an anonymous auto-promoted
-  literal token, or the grammar's own spliced `@skip` token are all
-  treated identically here -- in particular, a spliced `@skip` token
-  (already an ordinary, uncaptured `Star[RuleRef(skip)]` node in the IR
-  by the time this runs -- see `Aether.Eval.splice_skip/2`) needs no
-  special handling at all: it desugars into an ordinary `:splice`-kind
-  helper nonterminal whose own body has no capture entries, so splicing
-  its empty map into the parent is simply a no-op.
+  exclusion rules every other backend uses (`Grammar.VM.RuleCompiler`'s
+  own `token_names/1`/`implicit_capture_exclusions/1`) so a
+  `@keywords`/`@refine` target name, an anonymous auto-promoted literal
+  token, or the grammar's own spliced `@skip` token are all treated
+  identically here -- in particular, a spliced `@skip` token (already an
+  ordinary, uncaptured `Star[RuleRef(skip)]` node in the IR by the time
+  this runs -- see `Aether.Eval`'s own `splice_skip/2`) needs no special
+  handling at all: it desugars into an ordinary `:splice`-kind helper
+  nonterminal whose own body has no capture entries, so splicing its
+  empty map into the parent is simply a no-op.
   """
 
   alias Grammar.IR

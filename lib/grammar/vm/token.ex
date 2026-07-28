@@ -6,7 +6,7 @@ defmodule Grammar.VM.Token do
 
   `capture` is `nil` for an ordinary token (its capture, when some rule
   references it, is built as `{:token, name, text}` from `text` alone).
-  A `Grammar.IR.CustomLexeme`-matched token (`Ichor.CustomLexeme.scan/3`
+  A `Grammar.IR.CustomLexeme`-matched token (`c:Ichor.CustomLexeme.scan/3`
   returning an explicit capture override, not `nil`) carries its own
   structure here instead -- a string-interpolation token's embedded
   expressions, say -- which the rule level uses verbatim in place of the

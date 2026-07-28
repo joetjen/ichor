@@ -14,7 +14,7 @@ defmodule Grammar.Native.RuleCompiler do
   (`{:token, name, text}` / `{:rule, name, sub_captures}` / `{:text,
   text}`). `context` is read-only, threaded through purely so a
   `Grammar.IR.Custom` `@native(...)` leaf can hand it to
-  `Ichor.CustomRule.match/4` -- nothing else in this module ever reads
+  `c:Ichor.CustomRule.match/4` -- nothing else in this module ever reads
   it, only passes it along. A `RuleRef` compiles to a call into that
   other rule/token's own compiled function; the grammar's own token/rule
   namespaces (passed in as `token_names`) are what tell the two apart,

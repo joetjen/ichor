@@ -9,7 +9,7 @@ defmodule Grammar.IR.Custom do
   something read earlier" problems).
 
   `deps` names the only other rules `module`/`function` is allowed to
-  call back into (via the `rule_matchers` map `Ichor.CustomRule.match/4`
+  call back into (via the `rule_matchers` map `c:Ichor.CustomRule.match/4`
   receives) -- keeping this node's dependencies visible to
   `Grammar.Analysis`'s reference check even though its own body is
   opaque. `nullable`/`leading` are author-supplied facts standing in for
