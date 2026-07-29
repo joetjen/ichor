@@ -1,7 +1,13 @@
 defmodule Grammar.VM do
   @moduledoc """
   The interpreted runtime backend: compiles an `Aether.Grammar` to
-  bytecode and runs it against real input.
+  bytecode and runs it against real input. No compile-time codegen step
+  -- give it a grammar (from `Aether.Parser.parse/2` +
+  `Grammar.Analysis.run/1`) whenever you have one, including one your
+  own program only learns about at runtime (a user-supplied grammar, a
+  plugin, a REPL's `:load`). See the tutorial's "Loading a grammar at
+  runtime" section for a full worked example, and "Which path is right
+  for you?" for how this compares to `use Ichor`/`Mix.Tasks.Ichor.Gen`.
 
   Two genuinely separate compiled programs are involved, matching
   Aether's own "every grammar compiles to a Lexer feeding a Parser, never

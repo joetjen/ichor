@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-29
+
+### Changed
+
+- **Documentation reframed around three ways to run a grammar**, with
+  `mix ichor.gen` established as the recommended default for anything
+  shipping to production: README gained a "Three ways to run a grammar"
+  section (`mix ichor.gen` / `use Ichor` / the raw `Aether.Parser` +
+  `Grammar.Analysis` + `Grammar.VM` pipeline) spelling out the concrete
+  reason for that recommendation -- `use Ichor` needs the real `Ichor`
+  module present at compile time in whatever environment you compile
+  in, so `ichor` can't be `only: :dev, runtime: false` in any app that
+  still has one, including a `mix release` build (which normally
+  compiles under `MIX_ENV=prod`); `mix ichor.gen` output has no macro
+  dependency on `ichor` at all, so it's the only path that actually
+  allows the dev-only split `ichor_runtime` exists to enable. The
+  tutorial gained a new §8, "Loading a grammar at runtime", with a
+  worked plugin-loader example for the third path (previously only
+  mentioned in passing, never actually demonstrated); the cheatsheet
+  gained a "Which one do I want?" comparison table and was reordered to
+  match; the `Ichor`/`Mix.Tasks.Ichor.Gen`/`Grammar.VM` moduledocs now
+  name and cross-reference all three paths for readers landing there
+  directly via ExDoc/hex search.
+
+### Fixed
+
+- Three pre-existing broken anchor links across the guides (`guides/
+  TUTORIAL.md`, `guides/CHEATSHEET.md`, `guides/aether/TUTORIAL.md`,
+  `guides/EXAMPLES.md`) -- ExDoc's markdown renderer turns a period
+  inside a backtick-quoted heading (`` `mix ichor.gen` ``,
+  `` `Ichor.Actions` ``) into an extra hyphen when generating the
+  heading's own anchor id (`mix-ichor-gen`, `ichor-actions`), not just
+  stripping it, which none of the existing cross-reference links
+  accounted for. ExDoc doesn't validate these at build time, so they'd
+  been silently dead since introduced.
+
 ## [0.2.0] - 2026-07-29
 
 ### Added

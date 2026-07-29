@@ -5,7 +5,9 @@ defmodule Mix.Tasks.Ichor.Gen do
   Runs the exact same parse -> analyze -> native-codegen pipeline as
   `use Ichor, grammar: ..., actions: ...` (`Ichor.generate/3`), but once,
   from the command line, writing the result to disk as an ordinary
-  module instead of splicing it into a macro expansion.
+  module instead of splicing it into a macro expansion. **This is the
+  recommended way to use Ichor for anything shipping to production** --
+  see below for why.
 
       $ mix ichor.gen calculator.aether \\
           --module Calculator \\
@@ -24,13 +26,22 @@ defmodule Mix.Tasks.Ichor.Gen do
   `Grammar.Native.Runtime.Tokenizer`, `Grammar.VM.Token`, and -- for an
   `@engine lr`/`glr` grammar -- the LR/GLR shift-reduce and GSS runtime)
   for capture dispatch, error formatting, and token matching, exactly as
-  `use Ichor`-generated code does. That handful of modules is exactly
-  what `ichor_runtime` is: a consuming app can depend on `ichor_runtime`
-  as an ordinary runtime dependency and mark `ichor` itself `only: :dev,
-  runtime: false` -- the Aether front-end, the format importers,
-  `Grammar.Analysis`, the LR/GLR table builder, and the codegen backends
-  themselves (the bulk of the library) genuinely never ship, including
-  in a `mix release` build.
+  `use Ichor`-generated code does -- but as ordinary function calls, not
+  a macro expansion, so nothing about the generated module needs `Ichor`
+  (or `ichor` the package at all) present once it's been written. That
+  handful of modules is exactly what `ichor_runtime` is: a consuming app
+  can depend on `ichor_runtime` as an ordinary runtime dependency and
+  mark `ichor` itself `only: :dev, runtime: false` -- the Aether
+  front-end, the format importers, `Grammar.Analysis`, the LR/GLR table
+  builder, and the codegen backends themselves (the bulk of the
+  library) genuinely never ship, including in a `mix release` build.
+  Contrast with `use Ichor`: because that macro needs the real `Ichor`
+  module loaded to expand, `ichor` has to be a real dependency in
+  whatever environment compiles it, and Mix simply won't load a
+  `only: :dev` dependency under `MIX_ENV=prod` -- so a `mix release`
+  build (which compiles under `:prod` by default) fails outright if any
+  module still says `use Ichor` and `ichor` was marked dev-only. This
+  task exists precisely to avoid that tradeoff.
 
   Every private helper function the codegen backend generates
   (tokenizer/rule sub-functions, LR/GLR dispatch clauses, ...) is

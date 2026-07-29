@@ -33,6 +33,10 @@ behaviour — it decides what each rule and token *means*; the grammar
 only decides what's valid *syntax*. See the [tutorial](guides/TUTORIAL.md)
 for the full walkthrough of this example, including the Actions module.
 
+The inline `use Ichor` form above is the fastest way to try Ichor out —
+for anything beyond that, prefer `mix ichor.gen` (below): it's the same
+codegen, run once ahead of time instead of on every compile.
+
 ## Why
 
 Most grammar tools stop at "does this text match" (a recognizer) or "here's
@@ -42,6 +46,34 @@ with each piece of a match — evaluate it, build a config struct, execute a
 query, transpile it, whatever the grammar is for. The same grammar, parsed
 by either of two independent backends, always produces identical results
 through that same Actions module.
+
+## Three ways to run a grammar
+
+A grammar's `Ichor.Actions` module is the same no matter how the grammar
+itself gets turned into a parser — but *when* that happens is a real
+choice, with a real consequence for what your app depends on at
+runtime:
+
+| Path | When codegen runs | `ichor` needed at runtime? | Best for |
+| --- | --- | --- | --- |
+| **`mix ichor.gen`** (recommended) | Once, ahead of time, from the command line | No — `ichor_runtime` only | Anything shipping to production |
+| **`use Ichor`** | Every `mix compile` | Yes | A grammar that's still actively changing |
+| **Raw pipeline** (`Aether.Parser` + `Grammar.Analysis` + `Grammar.VM`) | At your program's own runtime | Yes | A grammar not known until runtime (user-supplied, plugins, a REPL) |
+
+The reason `mix ichor.gen` is the recommended default is concrete, not
+stylistic: a module using `use Ichor` needs the real `Ichor` module —
+and so the whole `ichor` package — present *at compile time, in
+whatever environment you compile in*, including a `mix release` build
+(which normally compiles under `MIX_ENV=prod`). That means `ichor`
+can't be marked `only: :dev, runtime: false` in any app that still has
+so much as one `use Ichor` module in its tree; Mix won't even load the
+`Ichor` module under `:prod` to expand the macro, so compilation fails
+outright. `mix ichor.gen`-generated code has no macro dependency on
+`ichor` at all — just ordinary function calls into `ichor_runtime` — so
+it's the only one of the three that actually lets `ichor` be dev-only.
+See the [tutorial](guides/TUTORIAL.md) for a full worked example of all
+three (§7-9), or the [cheatsheet](guides/CHEATSHEET.md) for a quick
+reference once you know which one you want.
 
 ## How it fits together
 
@@ -145,14 +177,11 @@ heredocs, string interpolation).
 - **`mix ichor.tokens`** — lists every token a grammar declares, in the
   exact order the lexer's maximal-munch tie-break uses, with a rendered
   pattern for each.
-- **`mix ichor.gen`** — runs the same parse/analyze/codegen pipeline as
-  `use Ichor` ahead of time, writing the result to a plain `.ex` file
-  instead of splicing it into a macro expansion, so a consuming app's
-  own `mix compile` doesn't re-parse and re-analyze the grammar (or
-  rebuild an LR/GLR table) on every build. The generated file only ever
-  calls into `ichor_runtime` (see below) — never Ichor proper — so a
-  project that only ever runs this ahead of time can mark `ichor` itself
-  `only: :dev, runtime: false`. Also accepts ABNF/BNF/ISO EBNF/PEG
+- **`mix ichor.gen`** — the recommended way to turn a grammar into a
+  parser (see [Three ways to run a grammar](#three-ways-to-run-a-grammar)
+  above): runs the same parse/analyze/codegen pipeline as `use Ichor`
+  ahead of time, writing the result to a plain `.ex` file instead of
+  splicing it into a macro expansion. Also accepts ABNF/BNF/ISO EBNF/PEG
   source directly (style picked from the file extension or an `@style`
   pragma), for reusing an existing non-Aether grammar without
   hand-translating it first.
@@ -161,35 +190,41 @@ heredocs, string interpolation).
   every Ichor-generated parser calls into at runtime: capture dispatch
   (`Ichor.Actions`), error formatting (`Ichor.Error`), the compiled
   Tokenizer/Parser combinators, the LR/GLR shift-reduce/GSS runtime, and
-  standalone `Ichor.Toolkit.Pratt`/`TermWalk`/`Ichor.Backtrack`. Ichor
+  standalone `Ichor.Toolkit.Pratt`/`TermWalk`/`Ichor.Backtrack`. It's
+  everything left over once you subtract "the compiler" from "what a
+  generated parser actually calls" — which is exactly what lets a
+  project depending on `mix ichor.gen` output alone mark `ichor` itself
+  `only: :dev, runtime: false` (see
+  [Three ways to run a grammar](#three-ways-to-run-a-grammar)). Ichor
   itself — grammar parsing, analysis, and both codegen backends —
   depends on it too (it's the one piece both the interpreted and
-  compiled backends share), but never the other way around: a project
-  using only pregenerated (`mix ichor.gen`) parsers needs nothing else
-  at runtime.
+  compiled backends share), but never the other way around.
 
 ## Installation
 
-Add `ichor` to your list of dependencies in `mix.exs`:
-
-```elixir
-def deps do
-  [
-    {:ichor, "~> 0.2.0"}
-  ]
-end
-```
-
-If every grammar you use is pregenerated ahead of time (`mix ichor.gen`,
-never `use Ichor` at your app's own compile time), depend on
-[`ichor_runtime`](https://hex.pm/packages/ichor_runtime) instead and
-keep `ichor` dev-only:
+**Recommended**: if every grammar you use is pregenerated ahead of time
+(`mix ichor.gen`, never `use Ichor` at your app's own compile time),
+add [`ichor_runtime`](https://hex.pm/packages/ichor_runtime) as your
+real runtime dependency and keep `ichor` itself dev-only:
 
 ```elixir
 def deps do
   [
     {:ichor_runtime, "~> 0.1.0"},
     {:ichor, "~> 0.2.0", only: :dev, runtime: false}
+  ]
+end
+```
+
+If you're still using `use Ichor` at your app's own compile time (a
+grammar that's still actively changing, say), `ichor` has to be a real
+dependency instead — it can't be `only: :dev` once anything in your app
+still expands that macro:
+
+```elixir
+def deps do
+  [
+    {:ichor, "~> 0.2.0"}
   ]
 end
 ```
