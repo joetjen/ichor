@@ -175,7 +175,7 @@ Add `ichor` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ichor, "~> 0.1.1"}
+    {:ichor, "~> 0.2.0"}
   ]
 end
 ```
@@ -189,7 +189,7 @@ keep `ichor` dev-only:
 def deps do
   [
     {:ichor_runtime, "~> 0.1.0"},
-    {:ichor, "~> 0.1.1", only: :dev, runtime: false}
+    {:ichor, "~> 0.2.0", only: :dev, runtime: false}
   ]
 end
 ```
