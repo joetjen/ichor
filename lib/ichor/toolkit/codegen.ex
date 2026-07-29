@@ -76,4 +76,27 @@ defmodule Ichor.Toolkit.Codegen do
   @doc "Like `clause/2`, but with a guard: `pattern when guard -> body`."
   @spec clause(Macro.t(), Macro.t(), Macro.t()) :: Macro.t()
   def clause(pattern, guard, body), do: {:->, [], [[{:when, [], [pattern, guard]}], body]}
+
+  @doc """
+  Quotes `shapes` (an `atom() => MapSet.t(atom())` map, e.g.
+  `Grammar.VM.RuleCompiler.capture_shapes/1`'s own return value) as AST
+  that reconstructs each `MapSet` via `MapSet.new/1`, instead of
+  `Macro.escape/1`'s literal `%MapSet{map: ...}` struct pattern.
+
+  `MapSet.t()` is only ever supposed to come from `MapSet.new/1` and
+  friends -- a literal struct pattern spelling out its internal `:map`
+  representation (exactly what a bare `Macro.escape/1` produces) reaches
+  around that abstraction, which trips Dialyzer's opaqueness check on
+  every module a grammar compiles to (`Grammar.Native`/`.LR`/`.GLR` all
+  splice a grammar's own `capture_shapes` in as a literal this way).
+  """
+  @spec capture_shapes_ast(%{optional(atom()) => MapSet.t(atom())}) :: Macro.t()
+  def capture_shapes_ast(shapes) do
+    entries =
+      for {name, set} <- shapes do
+        {name, quote(do: MapSet.new(unquote(Macro.escape(MapSet.to_list(set)))))}
+      end
+
+    {:%{}, [], entries}
+  end
 end

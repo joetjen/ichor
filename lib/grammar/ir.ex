@@ -232,7 +232,8 @@ defmodule Grammar.IR do
       }
 
   """
-  @spec custom(module(), atom(), [atom()], boolean(), [atom()], Grammar.IR.Meta.t()) :: Custom.t()
+  @spec custom(module(), atom(), [atom()], boolean(), [atom()] | nil, Grammar.IR.Meta.t()) ::
+          Custom.t()
   def custom(
         module,
         function,

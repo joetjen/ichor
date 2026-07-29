@@ -145,6 +145,23 @@ heredocs, string interpolation).
 - **`mix ichor.tokens`** — lists every token a grammar declares, in the
   exact order the lexer's maximal-munch tie-break uses, with a rendered
   pattern for each.
+- **`mix ichor.gen`** — runs the same parse/analyze/codegen pipeline as
+  `use Ichor` ahead of time, writing the result to a plain `.ex` file
+  instead of splicing it into a macro expansion, so a consuming app's
+  own `mix compile` doesn't re-parse and re-analyze the grammar (or
+  rebuild an LR/GLR table) on every build. The generated file only ever
+  calls into `ichor_runtime` (see below) — never Ichor proper — so a
+  project that only ever runs this ahead of time can mark `ichor` itself
+  `only: :dev, runtime: false`.
+- **`ichor_runtime`** (`packages/ichor_runtime` in this repo) — the small support
+  library every Ichor-generated parser calls into at runtime: capture
+  dispatch (`Ichor.Actions`), error formatting (`Ichor.Error`), the
+  compiled Tokenizer/Parser combinators, and the LR/GLR shift-reduce/GSS
+  runtime. Ichor itself — grammar parsing, analysis, and both codegen
+  backends — depends on it too (it's the one piece both the interpreted
+  and compiled backends share), but never the other way around: a
+  project using only pregenerated (`mix ichor.gen`) parsers needs
+  nothing else at runtime.
 
 ## Installation
 
@@ -154,6 +171,21 @@ Add `ichor` to your list of dependencies in `mix.exs`:
 def deps do
   [
     {:ichor, "~> 0.1.0"}
+  ]
+end
+```
+
+If every grammar you use is pregenerated ahead of time (`mix ichor.gen`,
+never `use Ichor` at your app's own compile time), depend on
+`ichor_runtime` instead and keep `ichor` dev-only. `ichor_runtime`
+isn't published to Hex separately (yet) — until it is, pull it in via
+`:path` (in this repo) or `:git`:
+
+```elixir
+def deps do
+  [
+    {:ichor_runtime, path: "packages/ichor_runtime"},
+    {:ichor, "~> 0.1.0", only: :dev, runtime: false}
   ]
 end
 ```

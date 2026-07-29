@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`mix ichor.gen`**: runs the parse/analyze/native-codegen pipeline
+  ahead of time and writes the result to a plain `.ex` file, instead of
+  `use Ichor` re-running it inside a macro expansion on every compile.
+  Every generated helper function is emitted as `def` rather than
+  `defp` (macro-originated code is exempt from Elixir's unused-function
+  check; written out as ordinary source, it isn't). `Ichor.generate/3`
+  is the new public entry point both `__using__/1` and the task share.
+- **`ichor_runtime`** (`packages/ichor_runtime`): split out of `ichor`
+  proper -- the ~18 modules a generated parser (from `mix ichor.gen` or
+  `use Ichor`) actually calls at runtime (`Ichor.Actions`, `Ichor.Error`,
+  the compiled Tokenizer/Parser combinators, and the LR/GLR shift-reduce/
+  GSS runtime), with everything dev-time-only (the Aether front-end,
+  format importers, `Grammar.Analysis`, the LR/GLR table builder, both
+  codegen backends) staying in `ichor`. `Grammar.LRTable` was split in
+  the process: the struct plus `current_terminal/3`/`unexpected_error/2`
+  (genuinely called at match time) moved to `ichor_runtime`; table
+  construction (`build/1`/`conflicts/1`, which need `Automaton`/
+  `Desugar`/`Sets`) stays in `ichor` as the new `Grammar.LRTable.Builder`.
+  `ichor` depends on `ichor_runtime` as an ordinary dependency (its own
+  interpreted backends need it too); not yet published to Hex separately
+  -- referenced via `path:` for now.
+
+### Fixed
+
+- `evaluate_node/3` moved from the top-level `Ichor` module to
+  `Ichor.Actions.evaluate_node/3` -- found while migrating a real
+  downstream consumer (`dextrin`) to the `ichor`/`ichor_runtime` split:
+  it's a genuine runtime entry point (any grammar with macro-like
+  features needs it to evaluate its own expansion, not just LISP's
+  worked example), not a compile-time-only concern like `generate/3`/
+  `__using__/1`, which are the only two things that actually belong in
+  the dev-only `ichor` package. Left in `Ichor` proper, it would have
+  been unavailable at runtime to anything depending on `ichor_runtime`
+  alone, exactly as the split intends.
+- `Ichor.Toolkit.Pratt`, `Ichor.Toolkit.TermWalk`, and `Ichor.Backtrack`
+  (+ `.Bindings`/`.Term`/`.Tree`) moved from `ichor` to `ichor_runtime` --
+  the same class of gap as `evaluate_node/3` above, found migrating
+  another real downstream consumer (Aletheia): a `@native(...)` rule's
+  own callback module (Prolog-style operator-precedence parsing, the
+  worked example this whole feature is motivated by -- see
+  `test/prolog/`) calls `Ichor.Toolkit.Pratt.parse/4` on every single
+  parse, not just once at grammar-generation time, and a consuming
+  engine built on `Ichor.Backtrack` calls into `Bindings`/`Tree` on every
+  resolution step. None of the three have any dev-only dependency of
+  their own (`Pratt` operates on a plain map, `Backtrack` is
+  self-contained, `TermWalk` only needs `Backtrack.Term`), so keeping
+  them in the dev-only package was an oversight in the original split,
+  not a deliberate exclusion. `Ichor.Toolkit.TypeScheme` (which stays in
+  `ichor` -- it's a compile-time type-checking concern) depends on both
+  `Bindings` and `TermWalk`; unaffected by the move since `ichor` already
+  depends on `ichor_runtime`.
+
 ## [0.1.1] - 2026-07-28
 
 ### Added

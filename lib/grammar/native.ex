@@ -19,6 +19,7 @@ defmodule Grammar.Native do
   alias Grammar.Native.RuleCompiler
   alias Grammar.Native.TokenizerCompiler
   alias Grammar.VM.RuleCompiler, as: VMRuleCompiler
+  alias Ichor.Toolkit.Codegen
 
   @doc "Generates the full quoted body (lexer + parser + `parse/1` + `run/1,2`) for `grammar`, dispatching to `actions_module`."
   @spec generate(Aether.Grammar.t(), module()) :: Macro.t()
@@ -26,10 +27,22 @@ defmodule Grammar.Native do
     {tokenizer_defs, tokenize_def} = TokenizerCompiler.generate(grammar)
     rule_defs = RuleCompiler.compile(grammar)
     root_fn = RuleCompiler.rule_fn_name(grammar.root)
-    capture_shapes = Macro.escape(VMRuleCompiler.capture_shapes(grammar))
+    capture_shapes = Codegen.capture_shapes_ast(VMRuleCompiler.capture_shapes(grammar))
     root = grammar.root
 
     quote do
+      # `capture_shapes` above is a compile-time-fully-known MapSet map;
+      # Dialyzer's success typing infers its exact concrete structure
+      # regardless of it being built via `MapSet.new/1`, then flags that
+      # as more precise than `Ichor.Actions.capture_shapes()`'s declared
+      # opaque `MapSet.t()` -- a known Dialyzer/opaque-type-plus-literal
+      # limitation, not a real bug. Some grammars' own token patterns
+      # also happen to be total over their own tokenizer candidates,
+      # making the shared `:fail` fallback below provably unreachable
+      # for those grammars specifically -- also not a real bug, just
+      # varies per grammar shape.
+      @dialyzer [:no_opaque, :no_match]
+
       alias Grammar.Native.Runtime.{Parser, Tokenizer}
       alias Grammar.VM.Token
 
