@@ -81,9 +81,14 @@ defmodule IchorRuntime.MixProject do
   defp description do
     "The small runtime support library Ichor-generated parsers (mix ichor.gen, or " <>
       "use Ichor) call into -- capture dispatch, error formatting, the compiled " <>
-      "Tokenizer/Parser combinators, and the LR/GLR shift-reduce/GSS runtime. " <>
-      "Ichor itself (grammar parsing, analysis, and codegen) is a dev-time-only " <>
-      "dependency; this is the only piece a generated parser needs at runtime."
+      "Tokenizer/Parser combinators, the LR/GLR shift-reduce/GSS runtime, operator-" <>
+      "precedence parsing (Ichor.Toolkit.Pratt, for @native(...) rules like a " <>
+      "Prolog-style op/3 table), generic term recursion (Ichor.Toolkit.TermWalk), " <>
+      "and unification/backtracking search (Ichor.Backtrack) for a consumer's own " <>
+      "engine built on top of a generated parser. Ichor itself (grammar parsing, " <>
+      "analysis, and codegen) is a dev-time-only dependency; this is the only piece " <>
+      "a generated parser -- or semantic analysis/an engine built on top of one -- " <>
+      "needs at runtime."
   end
 
   defp package do
@@ -131,8 +136,16 @@ defmodule IchorRuntime.MixProject do
         Grammar.GLR.GSS,
         Grammar.GLR.Runtime
       ],
+      Backtrack: [
+        Ichor.Backtrack,
+        Ichor.Backtrack.Bindings,
+        Ichor.Backtrack.Term,
+        Ichor.Backtrack.Tree
+      ],
       Toolkit: [
-        Ichor.Toolkit.Result
+        Ichor.Toolkit.Result,
+        Ichor.Toolkit.Pratt,
+        Ichor.Toolkit.TermWalk
       ]
     ]
   end

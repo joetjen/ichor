@@ -43,6 +43,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the dev-only `ichor` package. Left in `Ichor` proper, it would have
   been unavailable at runtime to anything depending on `ichor_runtime`
   alone, exactly as the split intends.
+- `Ichor.Toolkit.Pratt`, `Ichor.Toolkit.TermWalk`, and `Ichor.Backtrack`
+  (+ `.Bindings`/`.Term`/`.Tree`) moved from `ichor` to `ichor_runtime` --
+  the same class of gap as `evaluate_node/3` above, found migrating
+  another real downstream consumer (Aletheia): a `@native(...)` rule's
+  own callback module (Prolog-style operator-precedence parsing, the
+  worked example this whole feature is motivated by -- see
+  `test/prolog/`) calls `Ichor.Toolkit.Pratt.parse/4` on every single
+  parse, not just once at grammar-generation time, and a consuming
+  engine built on `Ichor.Backtrack` calls into `Bindings`/`Tree` on every
+  resolution step. None of the three have any dev-only dependency of
+  their own (`Pratt` operates on a plain map, `Backtrack` is
+  self-contained, `TermWalk` only needs `Backtrack.Term`), so keeping
+  them in the dev-only package was an oversight in the original split,
+  not a deliberate exclusion. `Ichor.Toolkit.TypeScheme` (which stays in
+  `ichor` -- it's a compile-time type-checking concern) depends on both
+  `Bindings` and `TermWalk`; unaffected by the move since `ichor` already
+  depends on `ichor_runtime`.
 
 ## [0.1.1] - 2026-07-28
 
