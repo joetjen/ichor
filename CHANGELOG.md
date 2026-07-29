@@ -16,20 +16,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `defp` (macro-originated code is exempt from Elixir's unused-function
   check; written out as ordinary source, it isn't). `Ichor.generate/3`
   is the new public entry point both `__using__/1` and the task share.
-- **`ichor_runtime`** (`packages/ichor_runtime`): split out of `ichor`
-  proper -- the ~18 modules a generated parser (from `mix ichor.gen` or
-  `use Ichor`) actually calls at runtime (`Ichor.Actions`, `Ichor.Error`,
-  the compiled Tokenizer/Parser combinators, and the LR/GLR shift-reduce/
-  GSS runtime), with everything dev-time-only (the Aether front-end,
-  format importers, `Grammar.Analysis`, the LR/GLR table builder, both
-  codegen backends) staying in `ichor`. `Grammar.LRTable` was split in
-  the process: the struct plus `current_terminal/3`/`unexpected_error/2`
-  (genuinely called at match time) moved to `ichor_runtime`; table
-  construction (`build/1`/`conflicts/1`, which need `Automaton`/
-  `Desugar`/`Sets`) stays in `ichor` as the new `Grammar.LRTable.Builder`.
-  `ichor` depends on `ichor_runtime` as an ordinary dependency (its own
-  interpreted backends need it too); not yet published to Hex separately
-  -- referenced via `path:` for now.
+- **`Ichor.GrammarImport`**: turns an ABNF/BNF/ISO-EBNF/PEG ruleset (as
+  `Ichor.ABNF`/`Ichor.BNF`/`Ichor.EBNF.ISO`/`Ichor.PEG` produce them --
+  not a runnable `Aether.Grammar` on their own) into one that is: picks
+  a root (the source's own first-declared rule, overridable), always
+  `@noskip`, auto-promotes bare literals/char-classes into synthetic
+  tokens, and -- for ABNF specifically -- fills in whichever of RFC
+  5234 Appendix B's "core rules" (`ALPHA`, `DIGIT`, `CRLF`, ...) the
+  source references but never defines, restricted to their transitive
+  closure so unreferenced, overlapping core rules (`CHAR`/`OCTET`
+  overlapping `DIGIT`, e.g.) can't win a maximal-munch tie against a
+  token a rule actually meant. `mix ichor.gen` now accepts any of these
+  formats directly (`.abnf`/`.bnf`/`.ebnf`/`.peg`, auto-detected from
+  the file extension, or forced with an `@style` pragma line), with a
+  new `--root NAME` flag for the non-Aether entry-rule override.
+- **[`ichor_runtime`](https://github.com/joetjen/ichor_runtime)**: split
+  out of `ichor` proper -- the ~24 modules a generated parser (from
+  `mix ichor.gen` or `use Ichor`) actually calls at runtime
+  (`Ichor.Actions`, `Ichor.Error`, the compiled Tokenizer/Parser
+  combinators, the LR/GLR shift-reduce/GSS runtime, and standalone
+  `Ichor.Toolkit.Pratt`/`TermWalk`/`Ichor.Backtrack`), with everything
+  dev-time-only (the Aether front-end, format importers,
+  `Grammar.Analysis`, the LR/GLR table builder, both codegen backends)
+  staying in `ichor`. `Grammar.LRTable` was split in the process: the
+  struct plus `current_terminal/3`/`unexpected_error/2` (genuinely
+  called at match time) moved to `ichor_runtime`; table construction
+  (`build/1`/`conflicts/1`, which need `Automaton`/`Desugar`/`Sets`)
+  stays in `ichor` as the new `Grammar.LRTable.Builder`. Independently
+  published ([`ichor_runtime` 0.1.0](https://hex.pm/packages/ichor_runtime))
+  and maintained -- its own repository, its own release cadence -- not
+  a subdirectory of this one; `ichor` depends on it via a normal `~>
+  0.1.0` Hex version constraint (its own interpreted backends need it
+  too).
 
 ### Fixed
 

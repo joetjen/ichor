@@ -63,7 +63,7 @@ defmodule Ichor.MixProject do
       # ExDoc is invoked via `MIX_ENV=dev mix docs`
 
       # === RUNTIME ===
-      {:ichor_runtime, path: "packages/ichor_runtime"}
+      {:ichor_runtime, "~> 0.1.0"}
     ]
   end
 
@@ -132,7 +132,8 @@ defmodule Ichor.MixProject do
   defp groups_for_modules do
     [
       Core: [
-        Ichor
+        Ichor,
+        Ichor.GrammarImport
       ],
       "Grammar IR": [
         Grammar.IR,

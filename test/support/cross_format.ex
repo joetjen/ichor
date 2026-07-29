@@ -31,85 +31,14 @@ defmodule Support.CrossFormat do
   `Ichor.EBNF.ISO.run/1` / `Ichor.PEG.run/1`), `root` (an atom naming
   the entry rule), and `token_names` (the subset of `ruleset` keys that
   are lexical/terminal -- everything else becomes a parser rule).
-  `@noskip` always, since whitespace tolerance is written explicitly
-  into the imported rules themselves (matching how real ABNF/EBNF/PEG
-  source is actually written -- none of them have `@skip`'s own
-  ambient-splicing convenience).
-
-  None of the three importers auto-promote an inline literal/char-class
-  used in a rule body into its own token the way `Aether.Parser` does --
-  there's no reason they would, that's an Aether authoring convenience,
-  not a property of ABNF/EBNF/PEG. But
-  `Grammar.VM`/`Grammar.Native`'s own rule compilers *require* that
-  invariant (a rule's own leaves are always a `RuleRef`, never a bare
-  `Literal`/`CharClass`/`Any` -- only a token's body ever contains one
-  directly), so every designated *rule* here gets walked and any such
-  bare leaf gets promoted into a synthetic token, exactly mirroring
-  what `Aether.Parser` already does for hand-written Aether source.
+  Delegates to `Ichor.GrammarImport.assemble/3` -- promoted to `lib/`
+  once `mix ichor.gen` needed this exact assembly for real, not just
+  for this test suite's own cross-format equivalence checks; see that
+  module's own docs for the full reasoning (`@noskip` always, bare
+  literal/char-class promotion into synthetic tokens, ...).
   """
   @spec assemble(%{atom() => Grammar.IR.expr()}, atom(), [atom()]) :: Aether.Grammar.t()
-  def assemble(ruleset, root, token_names) do
-    token_set = MapSet.new(token_names)
-    given_tokens = Map.take(ruleset, token_names)
-    given_rules = Map.reject(ruleset, fn {name, _ir} -> MapSet.member?(token_set, name) end)
-
-    {promoted_rules, anon_tokens} =
-      Enum.map_reduce(given_rules, %{}, fn {name, ir}, anon_acc ->
-        {ir2, anon_acc} = promote(ir, anon_acc)
-        {{name, ir2}, anon_acc}
-      end)
-
-    anon_names = Enum.map(anon_tokens, fn {name, _ir} -> name end)
-
-    %Aether.Grammar{
-      name: "cross-format",
-      root: root,
-      skip: nil,
-      case_insensitive: false,
-      tokens: Map.merge(given_tokens, Map.new(anon_tokens)),
-      token_order: token_names ++ anon_names,
-      anon_tokens: MapSet.new(anon_names),
-      rules: Map.new(promoted_rules)
-    }
-  end
-
-  # Walks one rule's own IR, promoting every bare Literal/CharClass/Any
-  # leaf into a fresh anonymous token (deduplicated by structural
-  # content, via `Support.IRStrip`), replacing it with a `RuleRef` to
-  # that token -- everything else (`RuleRef`, and every combinator's own
-  # wrapped sub-expression(s)) is left alone and just recursed into.
-  defp promote(%IR.Literal{} = leaf, anon_acc), do: promote_leaf(leaf, anon_acc)
-  defp promote(%IR.CharClass{} = leaf, anon_acc), do: promote_leaf(leaf, anon_acc)
-  defp promote(%IR.Any{} = leaf, anon_acc), do: promote_leaf(leaf, anon_acc)
-  defp promote(%IR.RuleRef{} = ref, anon_acc), do: {ref, anon_acc}
-
-  defp promote(%IR.Seq{exprs: exprs} = node, anon_acc) do
-    {exprs2, anon_acc} = Enum.map_reduce(exprs, anon_acc, &promote/2)
-    {%{node | exprs: exprs2}, anon_acc}
-  end
-
-  defp promote(%IR.Choice{exprs: exprs} = node, anon_acc) do
-    {exprs2, anon_acc} = Enum.map_reduce(exprs, anon_acc, &promote/2)
-    {%{node | exprs: exprs2}, anon_acc}
-  end
-
-  defp promote(%{expr: inner} = node, anon_acc) do
-    {inner2, anon_acc} = promote(inner, anon_acc)
-    {%{node | expr: inner2}, anon_acc}
-  end
-
-  defp promote_leaf(leaf, anon_acc) do
-    stripped = Support.IRStrip.strip(leaf)
-
-    case Enum.find(anon_acc, fn {_name, existing} -> existing == stripped end) do
-      {name, _existing} ->
-        {IR.rule_ref(name), anon_acc}
-
-      nil ->
-        name = :"ANON_#{map_size(anon_acc)}"
-        {IR.rule_ref(name), Map.put(anon_acc, name, stripped)}
-    end
-  end
+  defdelegate assemble(ruleset, root, token_names), to: Ichor.GrammarImport
 
   @doc "Runs `grammar` (already analyzed) as a bare recognizer, true/false only -- for asserting accept/reject parity against a native grammar's own test inputs."
   @spec accepts?(Aether.Grammar.t(), String.t()) :: boolean()

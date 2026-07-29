@@ -258,3 +258,17 @@ query = {:compound, :father, [:tom, {:var, make_ref()}]}
 See `test/prolog/` for the full grammar, actions, and test suite —
 including the directive-genuinely-changes-parsing test above, run both
 with and without the `op/3` line present.
+
+## Compiling any of these ahead of time
+
+Every grammar above works identically through `mix ichor.gen` as it does
+through `use Ichor` — Prolog's own `@native(...)` rule included, since
+`Ichor.Toolkit.Pratt`/`Ichor.Toolkit.TermWalk`/`Ichor.Backtrack` (the
+pieces `Prolog.Grammar.parse_term/4` and `Prolog.Actions` are built on)
+live in the independently-published
+[`ichor_runtime`](https://hex.pm/packages/ichor_runtime), not `ichor` —
+a pregenerated Prolog parser still has everything its own `@native(...)`
+callback needs at runtime. See the [tutorial](TUTORIAL.md) (§8,
+"Shipping a compiled parser") and the [cheatsheet](CHEATSHEET.md)
+("Compile a grammar ahead of time") for the actual command and the
+resulting `mix.exs` shape.

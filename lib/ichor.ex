@@ -58,8 +58,30 @@ defmodule Ichor do
   """
   @spec generate(String.t(), String.t() | nil, module()) :: Macro.t()
   def generate(source, file, actions_module) do
-    grammar = parse_and_analyze!(source, file)
+    source
+    |> parse_and_analyze!(file)
+    |> dispatch(actions_module)
+  end
 
+  @doc """
+  Like `generate/3`, but for a grammar that's already an `%Aether.Grammar{}`
+  -- not yet run through `Grammar.Analysis` -- rather than raw `.aether`
+  text. `Ichor.GrammarImport` is the caller: a grammar assembled from an
+  imported ABNF/BNF/EBNF/PEG ruleset never goes through `Aether.Parser`
+  at all, so `generate/3`'s own parse step doesn't apply to it, but
+  everything after parsing (analysis, engine dispatch) is identical.
+
+  Raises `CompileError` on the same conditions `generate/3` does, minus
+  the parse step.
+  """
+  @spec generate_from_grammar(Aether.Grammar.t(), module()) :: Macro.t()
+  def generate_from_grammar(grammar, actions_module) do
+    grammar
+    |> analyze!()
+    |> dispatch(actions_module)
+  end
+
+  defp dispatch(grammar, actions_module) do
     case grammar.engine do
       :peg -> Grammar.Native.generate(grammar, actions_module)
       :lr -> Grammar.Native.LR.generate(grammar, actions_module)
@@ -123,15 +145,24 @@ defmodule Ichor do
   end
 
   defp parse_and_analyze!(source, file) do
-    with {:ok, grammar} <- Aether.Parser.parse(source, file),
-         {:ok, grammar} <- Grammar.Analysis.run(grammar) do
-      grammar
-    else
-      {:error, errors} when is_list(errors) ->
-        raise CompileError, description: Enum.map_join(errors, "\n", &Ichor.Error.format/1)
-
-      {:error, error} ->
-        raise CompileError, description: Ichor.Error.format(error)
+    case Aether.Parser.parse(source, file) do
+      {:ok, grammar} -> analyze!(grammar)
+      {:error, error_or_errors} -> raise_ichor_errors!(error_or_errors)
     end
+  end
+
+  defp analyze!(grammar) do
+    case Grammar.Analysis.run(grammar) do
+      {:ok, grammar} -> grammar
+      {:error, error_or_errors} -> raise_ichor_errors!(error_or_errors)
+    end
+  end
+
+  defp raise_ichor_errors!(errors) when is_list(errors) do
+    raise CompileError, description: Enum.map_join(errors, "\n", &Ichor.Error.format/1)
+  end
+
+  defp raise_ichor_errors!(error) do
+    raise CompileError, description: Ichor.Error.format(error)
   end
 end

@@ -71,6 +71,54 @@ MyLang.run_sequence(input, ctx)
 `grammar:` resolves relative to the `use`-ing module's own file.
 Exactly one of `grammar:` / `grammar_source:` is required.
 
+## Compile a grammar ahead of time (`mix ichor.gen`)
+
+```sh
+mix ichor.gen PATH_TO_GRAMMAR --module MODULE --actions ACTIONS_MODULE --out PATH
+```
+
+Same pipeline as `use Ichor`, run once from the command line instead of
+inside a macro expansion on every compile — writes a plain, ordinary
+`MODULE` to `PATH`, with the exact same `tokenize/1`/`parse/1`/`run/1,2`
+functions `use Ichor` would generate. Rerun by hand whenever the grammar
+changes; no automatic staleness check.
+
+`PATH_TO_GRAMMAR` doesn't have to be `.aether` source — ABNF, BNF, ISO
+EBNF, and PEG grammars work too (via `Ichor.GrammarImport`), the style
+picked automatically from the extension, or overridden with an
+`@style` line in the source (`@style abnf`, `@style bnf`, `@style
+ebnf`, `@style peg`, `@style aether`):
+
+| Extension | Style |
+| --- | --- |
+| `.aether` (default) | Aether |
+| `.abnf` | ABNF (RFC 5234 + RFC 7405) |
+| `.bnf` | Classical BNF |
+| `.ebnf` | ISO EBNF (ISO/IEC 14977) |
+| `.peg` | PEG |
+
+For a non-Aether style, the entry rule is the source's own
+first-declared rule unless overridden with `--root NAME`, the grammar
+is always `@noskip`, and ABNF's RFC 5234 Appendix B "core rules"
+(`ALPHA`, `DIGIT`, `CRLF`, ...) are filled in automatically for
+whatever the source references but never defines.
+
+The generated file only ever calls into
+[`ichor_runtime`](https://hex.pm/packages/ichor_runtime) — an
+independently published package, never `ichor` itself — so a project
+using only pregenerated parsers can mark `ichor` `only: :dev,
+runtime: false` and depend on `ichor_runtime` as its one normal runtime
+dependency:
+
+```elixir
+def deps do
+  [
+    {:ichor_runtime, "~> 0.1.0"},
+    {:ichor, "~> 0.1.1", only: :dev, runtime: false}
+  ]
+end
+```
+
 ## Write an `Ichor.Actions` module
 
 ```elixir

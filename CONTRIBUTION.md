@@ -5,6 +5,19 @@ to know before opening an issue or a pull request.
 
 ## Getting started
 
+`ichor` and [`ichor_runtime`](https://github.com/joetjen/ichor_runtime)
+are two separate repositories, independently published and maintained
+-- `ichor_runtime` is the small runtime support library a generated
+parser actually calls at runtime (capture dispatch, error formatting,
+the compiled Tokenizer/Parser combinators, the LR/GLR shift-reduce/GSS
+runtime, plus the standalone `Ichor.Toolkit.Pratt`/`TermWalk`/
+`Ichor.Backtrack`); this repository (`ichor`) depends on it via a
+normal `~>` Hex version constraint, like any other dependency. If your
+change touches something a *generated parser calls at match/evaluation
+time*, you very likely want
+[`ichor_runtime`'s own repo](https://github.com/joetjen/ichor_runtime)
+and its own `CONTRIBUTION.md`, not this one.
+
 ```sh
 git clone <this repository>
 cd ichor
@@ -21,9 +34,15 @@ in its own right.
 - `lib/aether/` — the Aether lexer and parser (`.aether` source ->
   `Grammar.IR`).
 - `lib/grammar/` — `Grammar.IR` itself, the analysis pass, and both
-  backends (`Grammar.VM`, `Grammar.Native`).
-- `lib/ichor/` — `Ichor.Actions` and the ABNF/BNF/EBNF/PEG format
-  importers.
+  backends (`Grammar.VM`, `Grammar.Native`), plus the LR/GLR table
+  *builder* (`Grammar.LRTable.Builder`, `Automaton`/`Desugar`/`Sets`) —
+  the dev-time-only half of LR/GLR support; the runtime half lives in
+  `ichor_runtime`.
+- `lib/ichor/` — the ABNF/BNF/EBNF/PEG format importers. `Ichor.Actions`
+  itself, along with everything else a generated parser calls at
+  runtime, lives in `ichor_runtime`'s own repo instead — see its README
+  for the full list and the reasoning behind the split.
+- `lib/mix/tasks/` — `mix ichor.tokens` and `mix ichor.gen`.
 - `priv/grammar/` — the `.aether` sources the format importers compile
   from (read once, at compile time, via `use Ichor`).
 - `test/` — one directory per worked-example grammar
@@ -44,16 +63,30 @@ in its own right.
    shared semantics (an IR node's meaning, a compiler pass) needs
    verification against both, not just whichever one you happened to
    be testing against.
-3. **Run the full verification pass before opening a PR:**
+3. **Which repo does this belong in?** If you're adding something a
+   *generated parser calls at match/evaluation time* (not just once at
+   codegen time), it almost certainly belongs in `ichor_runtime`, not
+   here — that was the exact gap `Ichor.Actions.evaluate_node/3` and
+   `Ichor.Toolkit.Pratt`/`TermWalk`/`Ichor.Backtrack` were originally
+   filed under before being moved (see CHANGELOG.md's `[Unreleased]`
+   entry for the reasoning). If in doubt: does a project depending on
+   `ichor_runtime` alone (with `ichor` `only: :dev, runtime: false`)
+   still need it at runtime? If yes, it belongs in `ichor_runtime`,
+   which means opening the PR against
+   [that repo](https://github.com/joetjen/ichor_runtime) instead.
+4. **Run `mix precommit` before opening a PR** (chains `format` ->
+   `compile --warnings-as-errors` -> `credo --strict` -> `sobelow` ->
+   `test` -> `dialyzer`):
 
    ```sh
-   mix format
-   mix compile --warnings-as-errors --force
-   mix test
-   mix docs
+   mix precommit
    ```
 
-4. **Match the existing documentation style.** Default to no comments;
+   Also run `mix docs` and skim the output for warnings — a broken
+   moduledoc cross-reference or extras link won't fail the build but
+   will show up there.
+
+5. **Match the existing documentation style.** Default to no comments;
    when one is warranted, explain a non-obvious *why* (a hidden
    constraint, a subtle invariant, the specific bug class it prevents),
    not what the code already makes obvious by being well-named.
