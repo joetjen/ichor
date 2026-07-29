@@ -11,6 +11,8 @@ defmodule Template do
 
   @behaviour Ichor.Backtrack.Term
 
+  alias Ichor.Toolkit.TermWalk
+
   @impl true
   def variable?({:var, _name}), do: true
   def variable?(_), do: false
@@ -27,8 +29,6 @@ defmodule Template do
 
   @impl true
   def reconstruct(:concat, terms), do: {:concat, terms}
-
-  alias Ichor.Toolkit.TermWalk
 
   @doc "Every variable name `template` references, anywhere inside it."
   @spec variables(term()) :: MapSet.t(atom())

@@ -10,6 +10,17 @@ defmodule Ichor.Toolkit.Graph do
   rule-reference graphs.
   """
 
+  # MapSet's own internal representation isn't fixed across Elixir/OTP
+  # versions (a `:sets`-record-based union vs. a plain-map-based one),
+  # which Dialyzer's success typing for a plain `MapSet.new/0` ->
+  # `MapSet.put/2` accumulator (ordinary, idiomatic usage -- nothing
+  # about this loop reaches around MapSet's own API) resolves to a
+  # union wider than the opaque `MapSet.t()` contract this module's own
+  # `@spec` declares -- a known Dialyzer/dialyxir false positive on
+  # newer OTP, not a real bug (see also `Ichor.ABNF`'s own `@dialyzer`
+  # note on the same underlying opaqueness quirk).
+  @dialyzer :no_opaque
+
   @doc """
   Every node reachable from `start_nodes` (inclusive) by repeatedly
   following `neighbors_fn`. To check "is `node` reachable from

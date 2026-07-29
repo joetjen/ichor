@@ -13,10 +13,10 @@ defmodule Grammar.GLR.Runtime do
 
   alias Grammar.GLR.GSS
   alias Grammar.LRTable
-  alias Grammar.LRTable.{Automaton, Captures, Production}
+  alias Grammar.LRTable.{Captures, Production}
   alias Ichor.Error
 
-  @type action_fn :: (Grammar.LRTable.state_id(), atom() -> [Automaton.action()])
+  @type action_fn :: (Grammar.LRTable.state_id(), atom() -> [LRTable.action()])
   @type goto_fn :: (Grammar.LRTable.state_id(), atom() -> Grammar.LRTable.state_id() | nil)
 
   @doc "Runs the GSS shift-reduce/fork loop over `stream`, starting from `start_state`, dispatching every lookup through `action_fn`/`goto_fn`."

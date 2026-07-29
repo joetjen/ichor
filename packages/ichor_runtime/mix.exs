@@ -3,18 +3,29 @@ defmodule IchorRuntime.MixProject do
 
   @version "0.1.0"
 
+  # `mix precommit` includes `test` as a step; without this, Mix runs
+  # the whole alias chain (including `mix test`) in :dev, and `mix test`
+  # itself refuses to run outside :test when invoked as a sub-task
+  # rather than the top-level command.
+  def cli do
+    [preferred_envs: [precommit: :test]]
+  end
+
   def project do
     [
       app: :ichor_runtime,
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       description: description(),
       package: package(),
       name: "IchorRuntime",
-      docs: docs()
+      docs: docs(),
+      aliases: aliases(),
+      test_coverage: [tool: ExCoveralls],
+      dialyzer: [plt_add_apps: [:mix]]
     ]
   end
 
@@ -29,7 +40,41 @@ defmodule IchorRuntime.MixProject do
 
   defp deps do
     [
-      {:ex_doc, "~> 0.40", only: :dev, runtime: false}
+      # === CODE QUALITY & STATIC ANALYSIS ===
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.14", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18", only: [:dev, :test], runtime: false},
+      # Credo is invoked via `mix credo`
+      # Dialyzer is invoked via `mix dialyzer`
+      # Sobelow is invoked via `mix sobelow`
+
+      # === TESTING ===
+      {:mox, "~> 1.2", only: [:dev, :test]},
+      {:faker, "~> 0.19", only: [:test]},
+      {:stream_data, "~> 1.4", only: [:test]},
+
+      # === DEVELOPMENT TOOLING ===
+      # Mix, and Hex are built-in (no deps needed)
+      {:ex_doc, "~> 0.40", only: [:dev], runtime: false}
+      # ExDoc is invoked via `mix docs`
+
+      # === RUNTIME ===
+    ]
+  end
+
+  # Fast/cheap checks first so a broken commit fails quickly; dialyzer
+  # (slowest, especially its first PLT build) runs last.
+  defp aliases do
+    [
+      precommit: [
+        "format",
+        "compile --warnings-as-errors",
+        "credo --strict",
+        "sobelow",
+        "test",
+        "dialyzer"
+      ]
     ]
   end
 

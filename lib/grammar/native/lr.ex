@@ -67,7 +67,7 @@ defmodule Grammar.Native.LR do
 
   defp do_generate(grammar, table, actions_module) do
     {tokenizer_defs, tokenize_def} = TokenizerCompiler.generate(grammar)
-    capture_shapes = Macro.escape(Grammar.VM.RuleCompiler.capture_shapes(grammar))
+    capture_shapes = Codegen.capture_shapes_ast(Grammar.VM.RuleCompiler.capture_shapes(grammar))
     root = grammar.root
     start_fn = state_fn_name(table.start_state)
     start_state = table.start_state
@@ -92,6 +92,12 @@ defmodule Grammar.Native.LR do
       end
 
     quote do
+      # See `Grammar.Native.generate/2`'s own identical note: a
+      # compile-time-known capture_shapes MapSet, plus a possibly-total
+      # tokenizer depending on this grammar's own token patterns, both
+      # known Dialyzer false-positive sources, not real bugs.
+      @dialyzer [:no_opaque, :no_match]
+
       alias Grammar.LR.Stack
       alias Grammar.LRTable
       alias Grammar.Native.Runtime.Tokenizer

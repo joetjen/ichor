@@ -17,13 +17,18 @@ defmodule Grammar.Lexer do
   alias Grammar.VM.Token
   alias Ichor.Error
 
+  @typedoc "Mirrors `Aether.Grammar.refiner/0` (dev-only, in `ichor` proper)."
+  @type refiner ::
+          {:keywords, %{String.t() => atom()}}
+          | {:custom, module :: module(), function :: atom(), possible_names :: [atom()]}
+
   @doc """
   Reclassifies `tokens` in order, or reports the first `@refine`-rejected
   one. `refiners` empty is the overwhelmingly common case (most grammars
   have no `@keywords`/`@refine` at all), short-circuited without walking
   the list.
   """
-  @spec reclassify([Token.t()], %{atom() => Aether.Grammar.refiner()}) ::
+  @spec reclassify([Token.t()], %{atom() => refiner()}) ::
           {:ok, [Token.t()]} | {:error, Error.t()}
   def reclassify(tokens, refiners) when map_size(refiners) == 0, do: {:ok, tokens}
 

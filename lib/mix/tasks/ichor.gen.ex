@@ -135,7 +135,11 @@ defmodule Mix.Tasks.Ichor.Gen do
     """
   end
 
-  defp usage(message \\ nil) do
+  @spec usage() :: no_return()
+  defp usage, do: usage(nil)
+
+  @spec usage(String.t() | nil) :: no_return()
+  defp usage(message) do
     usage_line =
       "usage: mix ichor.gen PATH_TO_GRAMMAR --module MODULE --actions ACTIONS_MODULE --out PATH"
 
