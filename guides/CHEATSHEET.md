@@ -5,6 +5,17 @@ anything here doesn't make sense yet, or the
 [Aether cheatsheet](aether/AETHER_CHEATSHEET.md) for grammar-syntax-level
 lookups.
 
+## Which one do I want?
+
+| Path | `ichor` needed at runtime? | Best for |
+| --- | --- | --- |
+| **`mix ichor.gen`** (recommended) | No — `ichor_runtime` only | Anything shipping to production |
+| **`use Ichor`** (native backend) | Yes | A grammar that's still actively changing |
+| **`Grammar.VM`** (no compile step) | Yes | A grammar not known until runtime |
+
+See the [tutorial](TUTORIAL.md#which-path-is-right-for-you) for the full
+reasoning behind the `ichor`-at-runtime column.
+
 ## Parse a grammar
 
 ```elixir
@@ -15,61 +26,9 @@ lookups.
 Always run a grammar through `Grammar.Analysis` before matching it —
 it rewrites direct left recursion and rejects hazards (dangling
 references, unreachable duplicate alternatives, repetitions that can
-never terminate) before they become runtime bugs.
-
-## Match with the VM backend (no compile step)
-
-```elixir
-Grammar.VM.parse(grammar, input)
-#=> {:ok, tokens_consumed} | {:error, %Ichor.Error{}}
-
-Grammar.VM.run(grammar, input, MyActions, initial_context \\ nil)
-#=> {:ok, value} | {:error, error_or_errors}
-
-Grammar.VM.run_sequence(grammar, input, MyActions, initial_context)
-#=> {:ok, [values], final_context} | {:error, error_or_errors}
-```
-
-Use `run_sequence/4` when `input` is several top-level forms back to
-back (e.g. a source file of many top-level definitions), not one single
-match spanning the whole string.
-
-## Match an `@engine lr`/`@engine glr` grammar
-
-`Grammar.VM` only ever runs `@engine peg` grammars (a clear error for
-anything else) — use the standalone engines directly instead,
-interpreted:
-
-```elixir
-Grammar.LR.compile(grammar)
-#=> {:ok, table} | {:error, [errors]}  -- errors if the table has any conflict at all
-
-Grammar.LR.run(grammar, input, MyActions, initial_context \\ nil)
-Grammar.GLR.run(grammar, input, MyActions, initial_context \\ nil)
-#=> same shape as Grammar.VM.run/4; GLR accepts conflicts and forks instead of rejecting them
-```
-
-`use Ichor` (the compile-time/native backend, below) dispatches
-automatically based on the grammar's own `@engine` — `MyLang.run/1,2`
-works identically no matter which engine the grammar declares; nothing
-in your own calling code changes.
-
-## Compile a grammar at build time (native backend)
-
-```elixir
-defmodule MyLang do
-  use Ichor, grammar: "my_lang.aether", actions: MyLang.Actions
-  # or: use Ichor, grammar_source: "...", actions: MyLang.Actions
-end
-
-MyLang.tokenize(input)  #=> {:ok, [%Grammar.VM.Token{}]} | {:error, error}
-MyLang.parse(input)     #=> {:ok, pos, raw_captures} | {:error, error}
-MyLang.run(input, ctx \\ nil)
-MyLang.run_sequence(input, ctx)
-```
-
-`grammar:` resolves relative to the `use`-ing module's own file.
-Exactly one of `grammar:` / `grammar_source:` is required.
+never terminate) before they become runtime bugs. Only needed if you're
+parsing a grammar yourself (the `Grammar.VM` path below, or writing your
+own tooling) — `use Ichor` and `mix ichor.gen` already do this for you.
 
 ## Compile a grammar ahead of time (`mix ichor.gen`)
 
@@ -118,6 +77,66 @@ def deps do
   ]
 end
 ```
+
+## Compile a grammar at build time (native backend)
+
+```elixir
+defmodule MyLang do
+  use Ichor, grammar: "my_lang.aether", actions: MyLang.Actions
+  # or: use Ichor, grammar_source: "...", actions: MyLang.Actions
+end
+
+MyLang.tokenize(input)  #=> {:ok, [%Grammar.VM.Token{}]} | {:error, error}
+MyLang.parse(input)     #=> {:ok, pos, raw_captures} | {:error, error}
+MyLang.run(input, ctx \\ nil)
+MyLang.run_sequence(input, ctx)
+```
+
+`grammar:` resolves relative to the `use`-ing module's own file.
+Exactly one of `grammar:` / `grammar_source:` is required. Unlike
+`mix ichor.gen`, this re-parses/re-analyzes/re-generates the grammar on
+every `mix compile` — and needs `ichor` present wherever that compile
+happens, `mix release` builds included, so `ichor` can't be `only: :dev`
+here.
+
+## Match with the VM backend (no compile step)
+
+```elixir
+Grammar.VM.parse(grammar, input)
+#=> {:ok, tokens_consumed} | {:error, %Ichor.Error{}}
+
+Grammar.VM.run(grammar, input, MyActions, initial_context \\ nil)
+#=> {:ok, value} | {:error, error_or_errors}
+
+Grammar.VM.run_sequence(grammar, input, MyActions, initial_context)
+#=> {:ok, [values], final_context} | {:error, error_or_errors}
+```
+
+Use `run_sequence/4` when `input` is several top-level forms back to
+back (e.g. a source file of many top-level definitions), not one single
+match spanning the whole string. This is the path for a grammar loaded
+at runtime — see the [tutorial](TUTORIAL.md#8-loading-a-grammar-at-runtime)
+for a worked example.
+
+## Match an `@engine lr`/`@engine glr` grammar
+
+`Grammar.VM` only ever runs `@engine peg` grammars (a clear error for
+anything else) — use the standalone engines directly instead,
+interpreted:
+
+```elixir
+Grammar.LR.compile(grammar)
+#=> {:ok, table} | {:error, [errors]}  -- errors if the table has any conflict at all
+
+Grammar.LR.run(grammar, input, MyActions, initial_context \\ nil)
+Grammar.GLR.run(grammar, input, MyActions, initial_context \\ nil)
+#=> same shape as Grammar.VM.run/4; GLR accepts conflicts and forks instead of rejecting them
+```
+
+`use Ichor` (the compile-time/native backend, above) dispatches
+automatically based on the grammar's own `@engine` — `MyLang.run/1,2`
+works identically no matter which engine the grammar declares; nothing
+in your own calling code changes.
 
 ## Write an `Ichor.Actions` module
 

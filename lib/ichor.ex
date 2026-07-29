@@ -6,6 +6,18 @@ defmodule Ichor do
   via either an interpreted VM backend (`Grammar.VM`) or compile-time
   native codegen (`__using__/1` below).
 
+  There are three genuinely different ways to go from grammar text to a
+  running parser: `__using__/1` below (compile-time codegen, rerun on
+  every `mix compile`), `Mix.Tasks.Ichor.Gen` (the same codegen, run
+  once ahead of time to a checked-in `.ex` file -- **the recommended
+  default for anything shipping to production**, since it's the only
+  one of the three where `ichor` itself never needs to be present at
+  runtime, `mix release` builds included), and `Grammar.VM` called
+  directly on an `Aether.Parser.parse/2` + `Grammar.Analysis.run/1`
+  result (no codegen at all, for a grammar not known until your own
+  program is already running). See the tutorial's "Which path is right
+  for you?" section for a full worked comparison of all three.
+
   This top-level module holds `__using__/1`, the native codegen
   backend's own entry point:
 

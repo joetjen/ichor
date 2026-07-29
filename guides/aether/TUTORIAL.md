@@ -231,6 +231,6 @@ Grammar.VM.parse(grammar, ~S(name = "ichor"; version = 1;))
 Pair this with an `Ichor.Actions` module implementing `handle_rule(:config,
 %{entry: entries}, ctx)` and `handle_rule(:entry, %{key: k, value: v}, ctx)`
 to fold the whole thing into a real `%{String.t() => term()}` map — see the
-[Ichor tutorial](../TUTORIAL.md#6-giving-meaning-ichoractions) for exactly
+[Ichor tutorial](../TUTORIAL.md#6-giving-meaning-ichor-actions) for exactly
 that pattern, or [Aether examples](AETHER_EXAMPLES.md) for more complete,
 runnable grammars.

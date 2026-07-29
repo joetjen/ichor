@@ -68,7 +68,7 @@ pair          := SCALAR COLON (inline_value | NEWLINE @indent(block_value))
 `@indent(...)` and `@samecol` give Aether layout-sensitivity (a value
 under a key must be indented deeper; sibling keys must line up in the
 same column) without a scannerless parser having to special-case columns
-everywhere — see the [Aether reference](aether/AETHER.md#indentation)
+everywhere — see the [Aether reference](aether/AETHER.md#indentation-sensitivity)
 for how they work. With `Support.NoActions` (a module implementing no
 callbacks at all) as the Actions module, the default fallback alone
 produces a plain `Ichor.Node` tree; a small `materialize` pass then walks
@@ -259,16 +259,31 @@ See `test/prolog/` for the full grammar, actions, and test suite —
 including the directive-genuinely-changes-parsing test above, run both
 with and without the `op/3` line present.
 
-## Compiling any of these ahead of time
+## Running any of these three different ways
 
-Every grammar above works identically through `mix ichor.gen` as it does
-through `use Ichor` — Prolog's own `@native(...)` rule included, since
-`Ichor.Toolkit.Pratt`/`Ichor.Toolkit.TermWalk`/`Ichor.Backtrack` (the
-pieces `Prolog.Grammar.parse_term/4` and `Prolog.Actions` are built on)
-live in the independently-published
-[`ichor_runtime`](https://hex.pm/packages/ichor_runtime), not `ichor` —
-a pregenerated Prolog parser still has everything its own `@native(...)`
-callback needs at runtime. See the [tutorial](TUTORIAL.md) (§8,
-"Shipping a compiled parser") and the [cheatsheet](CHEATSHEET.md)
-("Compile a grammar ahead of time") for the actual command and the
-resulting `mix.exs` shape.
+Every grammar above is shown as plain `.aether` source, but that's
+independent of *how* it ends up running — see the
+[tutorial](TUTORIAL.md#which-path-is-right-for-you) for the full
+three-way breakdown. Two extremes worth calling out here specifically:
+
+- **Ahead of time, via `mix ichor.gen`** (recommended): every grammar
+  above works identically through it as it does through `use Ichor` —
+  Prolog's own `@native(...)` rule included, since
+  `Ichor.Toolkit.Pratt`/`Ichor.Toolkit.TermWalk`/`Ichor.Backtrack` (the
+  pieces `Prolog.Grammar.parse_term/4` and `Prolog.Actions` are built
+  on) live in the independently-published
+  [`ichor_runtime`](https://hex.pm/packages/ichor_runtime), not `ichor`
+  — a pregenerated Prolog parser still has everything its own
+  `@native(...)` callback needs at runtime. See the
+  [tutorial](TUTORIAL.md#9-shipping-a-compiled-parser-mix-ichor-gen-and-ichor_runtime)
+  (§9, "Shipping a compiled parser") and the [cheatsheet](CHEATSHEET.md)
+  ("Compile a grammar ahead of time") for the actual command and the
+  resulting `mix.exs` shape.
+- **Loaded at runtime, with no codegen at all**: any of these grammars
+  could equally be text your program only sees once it's already
+  running — a user-supplied LogQL filter, a Prolog knowledge base loaded
+  from disk — via `Aether.Parser.parse` + `Grammar.Analysis.run` +
+  `Grammar.VM`, exactly as shown in the
+  [tutorial's runtime-loading section](TUTORIAL.md#8-loading-a-grammar-at-runtime)
+  (§8). Right when "which grammar" is itself a runtime decision, not a
+  build-time one.

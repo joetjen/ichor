@@ -10,6 +10,32 @@ pragma, every operator), see the [Aether tutorial](aether/TUTORIAL.md) and
 [Aether reference](aether/AETHER.md) instead — this tutorial only
 introduces as much Aether as the calculator example needs.
 
+## Which path is right for you?
+
+There are three genuinely different ways to turn a grammar into a
+running parser, and they show up in this exact order below:
+
+- **The raw pipeline** (`Aether.Parser` + `Grammar.Analysis` +
+  `Grammar.VM`, §1-6) — no codegen at all, the grammar is just data your
+  program parses and interprets whenever it wants. Right for a grammar
+  that isn't known until your program actually runs — see §8.
+- **`use Ichor`** (§7) — the same grammar, compiled to real Elixir
+  functions every time you run `mix compile`. Right for a grammar that's
+  still actively changing during development.
+- **`mix ichor.gen`** (§9, **recommended for anything shipping to
+  production**) — the same codegen as `use Ichor`, run once ahead of
+  time instead of on every compile, writing a plain `.ex` file you check
+  in. It's the only one of the three that lets `ichor` itself — the
+  whole compiler: the Aether front-end, the format importers,
+  `Grammar.Analysis`, both codegen backends — be an ordinary dev-only
+  dependency, absent from your app at runtime entirely.
+
+If you already know which one you want, jump straight to its section.
+This tutorial nonetheless builds up from the raw pipeline first, one
+piece at a time — that's deliberate: it's the best way to actually see
+what parsing, analysis, and evaluation each do, before either compiled
+path hides all three behind one line.
+
 ## 1. A grammar is just a string
 
 Aether grammars are plain text, parsed by `Aether.Parser`. Every grammar
@@ -236,14 +262,76 @@ runtime (user-supplied config formats, a REPL that loads grammars on
 demand) and `Grammar.Native` for grammars fixed at compile time, where
 the extra speed is worth it.
 
-## 8. Shipping a compiled parser: `mix ichor.gen` and `ichor_runtime`
+## 8. Loading a grammar at runtime
 
-`use Ichor` is convenient, but it means `Calculator`'s own `mix compile`
-re-parses `calculator.aether`, re-runs `Grammar.Analysis`, and re-runs
-the native codegen backend *every single time* — inside a macro
-expansion, on every compile, forever. For a grammar that's stopped
-changing, that's pure overhead: the codegen work only ever needs to
-happen once.
+Sections 1-6 already showed every piece this needs — parsing and
+analyzing a grammar isn't something only `use Ichor` or `mix ichor.gen`
+do internally, it's three ordinary function calls you can make yourself,
+whenever your own program decides it's time. That's the real third
+option, distinct from either compiled path: a grammar your program
+doesn't know about until it's already running.
+
+Say `Calculator` is instead a plugin system, and users can drop in their
+own `.aether` grammar for a mini-language to run against their data — the
+grammar file's path isn't known until someone actually does that:
+
+```elixir
+defmodule PluginLoader do
+  def load!(path) do
+    path
+    |> File.read!()
+    |> Aether.Parser.parse(path)
+    |> case do
+      {:ok, grammar} -> grammar
+      {:error, error} -> raise Ichor.Error.format(error)
+    end
+    |> Grammar.Analysis.run()
+    |> case do
+      {:ok, grammar} -> grammar
+      {:error, error} -> raise Ichor.Error.format(error)
+    end
+  end
+
+  def run(grammar, input, actions), do: Grammar.VM.run(grammar, input, actions)
+end
+
+grammar = PluginLoader.load!("plugins/calculator.aether")
+PluginLoader.run(grammar, "2 + 3 * 4", Calculator.Actions)
+#=> {:ok, 14}
+```
+
+Same grammar text, same `Calculator.Actions` module, same result as
+`use Ichor`/`mix ichor.gen` further down — the only difference is *when*
+`Aether.Parser.parse` and `Grammar.Analysis.run` ran: here, the first
+time `PluginLoader.load!/1` is actually called, instead of at your own
+`mix compile` or a one-time `mix ichor.gen` invocation. That's also why
+this is the one path where `ichor` (not just `ichor_runtime`) has to be
+a genuine runtime dependency, not dev-only — parsing and analyzing raw
+grammar text is exactly what `ichor` proper does, and unlike the two
+compiled paths below, that work hasn't already happened by the time
+your program runs.
+
+This is the right choice when the grammar itself is the variable — a
+user-supplied config format, a REPL's `:load` command, anything where
+"which grammar" is a runtime decision, not a build-time one. If your own
+grammars are fixed by the time you ship, prefer one of the next two
+sections instead.
+
+## 9. Shipping a compiled parser: `mix ichor.gen` and `ichor_runtime`
+
+This is the recommended default once a grammar is heading anywhere near
+production — everything else in this tutorial has been building toward
+it. `use Ichor` is convenient during development, but it means
+`Calculator`'s own `mix compile` re-parses `calculator.aether`, re-runs
+`Grammar.Analysis`, and re-runs the native codegen backend *every single
+time* — inside a macro expansion, on every compile, forever. Worse,
+because that macro expansion needs the real `Ichor` module to exist at
+compile time, `ichor` has to be a genuine dependency in whatever
+environment you compile in — including a `mix release` build, which
+normally compiles under `MIX_ENV=prod`. There's no way to mark `ichor`
+`only: :dev` while any module still says `use Ichor`: Mix won't load the
+`Ichor` module at all under `:prod`, so the macro can't expand, and
+compilation fails outright.
 
 `mix ichor.gen` runs that exact same parse → analyze → codegen pipeline
 from the command line instead, writing the result to a plain, ordinary
@@ -265,13 +353,14 @@ This is more than a compile-time optimization, though — it changes what
 your project needs installed *at all*. The generated file only ever
 calls a small, fixed set of support modules by name (`Ichor.Actions`,
 `Ichor.Error`, the compiled Tokenizer/Parser combinators, and — for an
-`@engine lr`/`glr` grammar — the LR/GLR runtime). That set is exactly
-what the separate, independently-published
+`@engine lr`/`glr` grammar — the LR/GLR runtime) — ordinary function
+calls, no macro, no compile-time dependency on `Ichor` at all. That set
+is exactly what the separate, independently-published
 [`ichor_runtime`](https://hex.pm/packages/ichor_runtime) package is.
 `ichor` itself — the Aether front-end, every format importer,
 `Grammar.Analysis`, the LR/GLR table builder, and both codegen backends
-— never runs again once the file's been generated. A project that only
-ever uses pregenerated parsers can reflect that directly in `mix.exs`:
+— never runs again once the file's been generated, so unlike `use
+Ichor`, it genuinely can be `only: :dev, runtime: false`:
 
 ```elixir
 def deps do
@@ -300,7 +389,7 @@ formats — an RFC's own ABNF, say — without hand-translating it to
 Aether first; none of those formats have Aether's named captures or
 `@skip` convenience, so the generated parser's `Ichor.Actions` module
 only ever sees the default `Ichor.Node`/passthrough shape. See the
-[cheatsheet](CHEATSHEET.md#compile-a-grammar-ahead-of-time-mix-ichorgen)
+[cheatsheet](CHEATSHEET.md#compile-a-grammar-ahead-of-time-mix-ichor-gen)
 for the full extension table and `--root` flag.
 
 If your grammar has a `@native(...)` rule or token whose own callback
@@ -313,7 +402,7 @@ needs something at *match* time — precedence-climbing expression parsing
 of a generated parser, called on every match/evaluation rather than once
 at codegen time.
 
-## 9. Where to go from here
+## 10. Where to go from here
 
 - [Examples](EXAMPLES.md) walks through several complete, working
   grammars covering different shapes of problem: a LISP dialect (special
