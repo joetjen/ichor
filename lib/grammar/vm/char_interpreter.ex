@@ -1,7 +1,7 @@
 defmodule Grammar.VM.CharInterpreter do
   @moduledoc """
   Runs a `Grammar.VM.CharCompiler`-produced program against raw input
-  text -- the machine `Grammar.VM.Lexer` uses to test one token at a
+  text -- the machine `Grammar.VM.Tokenizer` uses to test one token at a
   given starting position.
 
   Each backtrack (choice-point) entry snapshots the *call* stack

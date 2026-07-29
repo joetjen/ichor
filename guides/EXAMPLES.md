@@ -192,3 +192,83 @@ fallback mechanism that evaluates a calculator expression or builds a
 LISP closure works equally well for generating output text instead of a
 data value — the category `Ichor.Actions` targets is entirely up to your
 own module.
+
+## Prolog — a grammar mutated mid-file, evaluated by a real logic engine
+
+Real Prolog syntax — facts, rules with conjunction, and `:- op(...).`
+directives — parsed by a grammar whose own operator table doesn't exist
+until the source declares it, feeding an actual unification/backtracking
+engine once parsed:
+
+```text
+@grammar "prolog"
+@root clause
+@skip WS
+
+clause    := (directive | rule | fact) DOT
+directive := RULE_OP goal:term
+rule      := head:compound_or_atom RULE_OP body:conjunction
+fact      := compound_or_atom
+
+term := @native("Prolog.Grammar", "parse_term", primary) @hint(nullable: false, leading: (primary))
+```
+
+`term` is where this earns its place here: no fixed PEG/LR/GLR grammar
+can express "parse an expression using whichever operators, at whichever
+precedences, have been declared *so far*" — Prolog's own `op/3` can add
+a brand new operator (or change an existing one's precedence) from
+*inside* the file being parsed. `Prolog.Grammar.parse_term/4` (the
+`@native(...)` callback) is built on `Ichor.Toolkit.Pratt`, driven
+entirely by `context.operators` — and `Prolog.Actions`' own handling of
+a `:- op(Prec, Type, Name).` directive returns an *updated* context with
+the new operator added, which `Grammar.VM.run_sequence/4`'s per-form
+context threading then hands to the *next* clause's own parse. Run
+this file:
+
+```prolog
+:- op(200, xfy, ^).
+
+father(tom, bob).
+father(bob, ann).
+grandparent(X, Z) :- father(X, Y), father(Y, Z).
+power(N) :- N is 2 ^ 8.
+```
+
+and the `^` operator the last clause uses genuinely didn't exist until
+the first line ran — remove the directive and `power`'s own clause fails
+to parse, with the *same* grammar and the *same* source file otherwise
+unchanged.
+
+Parsing is only half of it: `Prolog.Actions` turns each fact/rule into
+`{:compound, functor, args}`/`{:var, ref}` data (freshening each
+clause's own variables consistently via `Ichor.Toolkit.TermWalk` — the
+same name means the same variable *within* one clause, never across
+two), which then unifies directly through `Ichor.Backtrack.Bindings` —
+the exact same substrate the library's own SLD-resolution worked example
+(`Ichor.Backtrack`) proves against hand-built terms, now fed by a real
+parser instead of Elixir data literals:
+
+```elixir
+{:ok, [father_tom_bob], _ctx} = Grammar.VM.run_sequence(grammar, "father(tom, bob).", Prolog.Actions, Prolog.Actions.new_context())
+
+query = {:compound, :father, [:tom, {:var, make_ref()}]}
+{:ok, bindings} = Ichor.Backtrack.Bindings.unify(Prolog.Terms, Ichor.Backtrack.Bindings.new(), father_tom_bob, query)
+```
+
+See `test/prolog/` for the full grammar, actions, and test suite —
+including the directive-genuinely-changes-parsing test above, run both
+with and without the `op/3` line present.
+
+## Compiling any of these ahead of time
+
+Every grammar above works identically through `mix ichor.gen` as it does
+through `use Ichor` — Prolog's own `@native(...)` rule included, since
+`Ichor.Toolkit.Pratt`/`Ichor.Toolkit.TermWalk`/`Ichor.Backtrack` (the
+pieces `Prolog.Grammar.parse_term/4` and `Prolog.Actions` are built on)
+live in the independently-published
+[`ichor_runtime`](https://hex.pm/packages/ichor_runtime), not `ichor` —
+a pregenerated Prolog parser still has everything its own `@native(...)`
+callback needs at runtime. See the [tutorial](TUTORIAL.md) (§8,
+"Shipping a compiled parser") and the [cheatsheet](CHEATSHEET.md)
+("Compile a grammar ahead of time") for the actual command and the
+resulting `mix.exs` shape.

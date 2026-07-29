@@ -1,0 +1,14 @@
+@grammar "ambig_tiebreak"
+@root s
+@engine glr
+@noskip
+
+; A genuinely ambiguous CFG, with no PEG-style prioritization at all: A
+; and B are two entirely different rules that happen to match the exact
+; same input. s's own alternative order (a declared before b) is the
+; only thing that can decide which derivation wins.
+X := "x"
+
+s := a | b
+a := X
+b := X

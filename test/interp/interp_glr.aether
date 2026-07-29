@@ -1,0 +1,15 @@
+@grammar "interp_glr"
+@root program
+@engine glr
+@noskip
+
+; Same as interp_lr.aether, tagged @engine glr instead -- proves the
+; same Grammar.IR.CustomLexeme-dependency splice works for
+; Grammar.Native.GLR too (this grammar has no conflicts, so GLR and LR
+; behave identically here; the point is exercising both codegen paths).
+NUMBER := [0-9]+
+PLUS   := "+"
+STRING := @native("JS.StringInterp", "scan", expr) @hint(nullable: false)
+
+expr    := NUMBER (PLUS n:NUMBER)*
+program := STRING

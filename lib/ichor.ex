@@ -6,18 +6,8 @@ defmodule Ichor do
   via either an interpreted VM backend (`Grammar.VM`) or compile-time
   native codegen (`__using__/1` below).
 
-  This top-level module holds `evaluate_node/3`: a general entry point for
-  evaluating a `Ichor.Capture.node_t()` that didn't come from the original
-  parse. Every other `.eval` thunk a `Ichor.Actions` implementation sees
-  is tied to a specific position in the text that was actually parsed; a
-  macro's *expansion* isn't -- it's new code, built by the macro body,
-  that still needs to go through the same `handle_rule`/`handle_token`
-  dispatch (or default fallback) as anything else. Not Lisp-specific in
-  principle: any grammar with macro-like features would need this same
-  re-entry point.
-
-  It also holds `__using__/1`, the native codegen backend's own entry
-  point:
+  This top-level module holds `__using__/1`, the native codegen
+  backend's own entry point:
 
       defmodule Calculator do
         use Ichor, grammar: "calculator.aether", actions: Calculator.Actions
@@ -32,30 +22,71 @@ defmodule Ichor do
   separate file on disk. Exactly one of the two is required. `actions:`
   bakes in a compile-time-known module reference -- `parse/1`,
   `tokenize/1`, and `run/1,2` all get added directly to the `use`-ing
-  module, via `Grammar.Native.generate/2`.
-  """
+  module, via `generate/3` below (dispatching further to
+  `Grammar.Native`/`Grammar.Native.LR`/`Grammar.Native.GLR` by
+  `@engine`).
 
-  alias Ichor.Actions
+  `generate/3` is also `Mix.Tasks.Ichor.Gen`'s entry point: the same
+  parse-analyze-codegen pipeline, just called from a Mix task instead of
+  from macro expansion, so a grammar can be compiled to a plain,
+  ordinary `.ex` file once and checked in, instead of every `use Ichor`
+  caller re-parsing and re-analyzing the same grammar on every compile.
+
+  A grammar-with-macros implementation (anything needing to evaluate a
+  raw capture node that didn't come from the original parse -- LISP's
+  own `defmacro`/expansion, most notably) wants `Ichor.Actions.evaluate_node/3`,
+  not anything here: unlike `generate/3`/`__using__/1`, which are
+  genuinely compile-time-only, that's a runtime entry point, and lives
+  in `ichor_runtime` alongside the rest of `Ichor.Actions`.
+  """
 
   @doc """
-  Evaluates a raw capture node (as found on any `Ichor.Capture.node`, or
-  built directly by something like a macro's `unreify`) against
-  `actions_module`, starting from `context`.
+  Parses and analyzes `source` (a full `.aether` grammar), then
+  generates the quoted module body for `actions_module` -- whichever of
+  `Grammar.Native`, `Grammar.Native.LR`, or `Grammar.Native.GLR` the
+  grammar's own `@engine` pragma selects. `file` is used only for
+  error messages (line/column context); pass `nil` if `source` didn't
+  come from a file.
+
+  Shared by `__using__/1` (which splices the result straight into the
+  caller's module) and `Mix.Tasks.Ichor.Gen` (which wraps it in its own
+  `defmodule` and writes it to disk as ordinary source).
+
+  Raises `CompileError` if `source` fails to parse or fails analysis
+  (unresolved rule references, a non-`peg` engine picked for a grammar
+  Analysis flags, an LR/GLR grammar with unresolvable conflicts, etc.).
   """
-  @spec evaluate_node(Ichor.Capture.node_t(), module(), Actions.context()) ::
-          {:ok, term(), Actions.context()} | {:error, Ichor.Error.t()}
-  def evaluate_node({:token, name, text}, actions_module, context) do
-    with {:ok, value} <- Actions.dispatch_token(actions_module, name, text, context) do
-      {:ok, value, context}
+  @spec generate(String.t(), String.t() | nil, module()) :: Macro.t()
+  def generate(source, file, actions_module) do
+    source
+    |> parse_and_analyze!(file)
+    |> dispatch(actions_module)
+  end
+
+  @doc """
+  Like `generate/3`, but for a grammar that's already an `%Aether.Grammar{}`
+  -- not yet run through `Grammar.Analysis` -- rather than raw `.aether`
+  text. `Ichor.GrammarImport` is the caller: a grammar assembled from an
+  imported ABNF/BNF/EBNF/PEG ruleset never goes through `Aether.Parser`
+  at all, so `generate/3`'s own parse step doesn't apply to it, but
+  everything after parsing (analysis, engine dispatch) is identical.
+
+  Raises `CompileError` on the same conditions `generate/3` does, minus
+  the parse step.
+  """
+  @spec generate_from_grammar(Aether.Grammar.t(), module()) :: Macro.t()
+  def generate_from_grammar(grammar, actions_module) do
+    grammar
+    |> analyze!()
+    |> dispatch(actions_module)
+  end
+
+  defp dispatch(grammar, actions_module) do
+    case grammar.engine do
+      :peg -> Grammar.Native.generate(grammar, actions_module)
+      :lr -> Grammar.Native.LR.generate(grammar, actions_module)
+      :glr -> Grammar.Native.GLR.generate(grammar, actions_module)
     end
-  end
-
-  def evaluate_node({:rule, name, raw_captures}, actions_module, context) do
-    Actions.dispatch_rule(actions_module, name, raw_captures, context, %{})
-  end
-
-  def evaluate_node({:text, text}, _actions_module, context) do
-    {:ok, text, context}
   end
 
   @doc false
@@ -83,8 +114,7 @@ defmodule Ichor do
                 "use Ichor accepts exactly one of grammar: or grammar_source:, not both"
       end
 
-    grammar = parse_and_analyze!(source, file)
-    body = Grammar.Native.generate(grammar, actions_module)
+    body = generate(source, file, actions_module)
 
     resource_attr =
       if external_resource do
@@ -115,15 +145,24 @@ defmodule Ichor do
   end
 
   defp parse_and_analyze!(source, file) do
-    with {:ok, grammar} <- Aether.Parser.parse(source, file),
-         {:ok, grammar} <- Grammar.Analysis.run(grammar) do
-      grammar
-    else
-      {:error, errors} when is_list(errors) ->
-        raise CompileError, description: Enum.map_join(errors, "\n", &Ichor.Error.format/1)
-
-      {:error, error} ->
-        raise CompileError, description: Ichor.Error.format(error)
+    case Aether.Parser.parse(source, file) do
+      {:ok, grammar} -> analyze!(grammar)
+      {:error, error_or_errors} -> raise_ichor_errors!(error_or_errors)
     end
+  end
+
+  defp analyze!(grammar) do
+    case Grammar.Analysis.run(grammar) do
+      {:ok, grammar} -> grammar
+      {:error, error_or_errors} -> raise_ichor_errors!(error_or_errors)
+    end
+  end
+
+  defp raise_ichor_errors!(errors) when is_list(errors) do
+    raise CompileError, description: Enum.map_join(errors, "\n", &Ichor.Error.format/1)
+  end
+
+  defp raise_ichor_errors!(error) do
+    raise CompileError, description: Ichor.Error.format(error)
   end
 end

@@ -1,0 +1,69 @@
+@grammar "prolog"
+@root clause
+@skip WS
+
+; Track 1's real motivating example (`op/3`), not `test/opexpr/opexpr.aether`'s
+; toy stand-in for it: a genuinely Prolog-shaped grammar, small on
+; purpose. Two deliberate, documented simplifications relative to full
+; ISO Prolog:
+;
+;   - Comma is *not* a real operator here -- it's ordinary grammar-level
+;     structure (`arglist`/`conjunction`), sidestepping ISO's "an
+;     argument is a term of priority =< 999" rule entirely, which would
+;     otherwise need `Ichor.Toolkit.Pratt` to support a maximum as well
+;     as a minimum precedence.
+;   - This fixture doesn't distinguish genuinely non-associative (xfx)
+;     operators from left-associative (yfx) ones -- `Ichor.Toolkit.Pratt`
+;     doesn't make that distinction either yet, so `is`/`=`/`</>` chain
+;     left-associatively here instead of being rejected outright the way
+;     ISO Prolog would reject `a is b is c`.
+;
+; What *is* real: `:- op(Prec, Type, Name).` directives, parsed from the
+; source itself, genuinely extend the operator table that later clauses
+; in the same file are parsed against -- via `Prolog.Grammar.parse_term/4`
+; (an `@native(...)` callback built on `Ichor.Toolkit.Pratt`) and
+; `Grammar.VM.run_sequence/4`'s per-form context threading, the same
+; mechanism this whole roadmap's intro already identified as sufficient
+; for exactly this ("a grammar mutated mid-file by something declared
+; earlier") -- proven here against real syntax instead of injected by a
+; test harness.
+
+WS      := [ \t\n]+
+VAR     := [A-Z_][a-zA-Z0-9_]*
+ATOM    := [a-z][a-zA-Z0-9_]*
+NUMBER  := [0-9]+
+OP      := [-+*/=<>^]+
+LPAREN  := "("
+RPAREN  := ")"
+COMMA   := ","
+DOT     := "."
+RULE_OP := ":-"
+
+; `run_sequence/4`'s own model, exactly like `test/lisp/lisp.aether`'s
+; `@root form` (one top-level form per call, not a `*`-repeated whole-
+; file rule) -- the caller loops, not the grammar.
+clause      := (directive | rule | fact) DOT
+directive   := RULE_OP goal:term
+rule        := head:compound_or_atom RULE_OP body:conjunction
+fact        := compound_or_atom
+conjunction := term (COMMA term)*
+
+compound_or_atom := compound | ATOM
+compound         := functor:ATOM LPAREN args:arglist RPAREN
+arglist          := term (COMMA term)*
+
+; The operator-precedence-parsed core: `primary` is this rule's only
+; declared dependency, exactly like `test/opexpr/opexpr.aether`'s own
+; `@native(...)` node -- everything else (parenthesized grouping,
+; explicit `f(...)` application) stays ordinary PEG structure around it.
+term    := @native("Prolog.Grammar", "parse_term", primary) @hint(nullable: false, leading: (primary))
+
+; `OP` as a bare primary is what lets an operator symbol appear as a
+; plain argument, not applied -- e.g. `^` itself as `op/3`'s own third
+; argument in `:- op(200, xfy, ^).`, the exact directive that registers
+; it. Never conflicts with `term`'s own operator-position handling:
+; `parse_nud` only ever falls through to `primary` for a token that
+; either isn't a registered operator at all, or is registered without a
+; `:prefix` entry -- precisely the cases where reading it as a bare atom
+; is correct.
+primary := NUMBER | VAR | compound_or_atom | OP | LPAREN inner:term RPAREN

@@ -1,0 +1,26 @@
+@grammar "calculator"
+@root expr
+@engine lr
+@noskip
+
+; No whitespace support (@noskip, no auto-splicing at all): SLR(1)'s
+; single, whole-grammar FOLLOW set per nonterminal can't distinguish "a
+; skip token trailing this reduce" from "a skip token starting the next
+; iteration of some other repeated group" once a grammar has more than
+; one precedence level -- a real, from-scratch-v1 SLR(1) limitation
+; (LALR(1) could resolve it with per-state lookahead; this table
+; construction doesn't). Left recursion, not the PEG-idiomatic
+; `term (op term)*` shape, precisely because bottom-up shift-reduce
+; parsing is what handles left recursion natively -- the whole reason
+; `@engine lr`/`glr` grammars skip Aether's PEG-specific rewrite at all.
+NUMBER := /\d+(\.\d+)?/
+PLUS   := "+"
+MINUS  := "-"
+STAR   := "*"
+SLASH  := "/"
+LPAREN := "("
+RPAREN := ")"
+
+expr   := expr op:(PLUS | MINUS) term | term
+term   := term op:(STAR | SLASH) factor | factor
+factor := NUMBER | LPAREN expr RPAREN

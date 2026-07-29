@@ -1,0 +1,17 @@
+@grammar "opexpr"
+@root expr
+
+NUMBER := [0-9]+
+OP     := [a-z]+
+SPACE  := [ \t\n]+
+
+; `OP` is never referenced by an ordinary rule (the custom matcher below
+; reads it straight off the raw token stream instead), so this otherwise
+; unused rule is only here to keep `OP` in the lexer's maximal-munch
+; candidate set (`Grammar.VM.lexable_token_order/1` only looks at what a
+; grammar's *rules* reference, not at what a `@native(...)` node peeks
+; at directly).
+op_ref := OP
+
+primary := NUMBER
+expr := @native("OpExprTest.Operators", "parse_infix", primary) @hint(nullable: false, leading: (primary))

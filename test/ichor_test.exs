@@ -2,21 +2,42 @@ defmodule IchorTest do
   use ExUnit.Case, async: true
   doctest Ichor
 
-  describe "evaluate_node/3" do
-    test "a raw token node dispatches to handle_token (or the default: raw text)" do
-      assert {:ok, "hi", :ctx} =
-               Ichor.evaluate_node({:token, :WORD, "hi"}, Support.NoActions, :ctx)
+  describe "generate/3" do
+    # `use Ichor` and `Mix.Tasks.Ichor.Gen` both funnel through this one
+    # function -- these tests check it dispatches to the right backend
+    # for each `@engine` value, by comparing against calling that
+    # backend directly on the same (parsed + analyzed) grammar. Each
+    # backend's own generated code is already exercised end to end
+    # elsewhere (the `Native.*` support modules' `use Ichor`, and
+    # `Mix.Tasks.Ichor.GenTest` for the file-writing path).
+
+    test "a peg grammar dispatches to Grammar.Native.generate/2" do
+      source = Support.ExampleGrammars.all()["4.1 calculator"]
+      assert same_generated?(source, "calc.aether", Calculator.Actions, Grammar.Native)
     end
 
-    test "a raw text node evaluates to its own text, context unchanged" do
-      assert {:ok, "abc", :ctx} = Ichor.evaluate_node({:text, "abc"}, Support.NoActions, :ctx)
+    test "an lr grammar dispatches to Grammar.Native.LR.generate/2" do
+      source = File.read!("test/lr_calculator/lr_calculator.aether")
+      assert same_generated?(source, "lr.aether", LrCalculator.Actions, Grammar.Native.LR)
     end
 
-    test "a raw rule node dispatches to handle_rule (or the default fallback)" do
-      raw = {:rule, :pair, %{key: {:token, :WORD, "a"}, value: {:token, :NUMBER, "1"}}}
-
-      assert {:ok, %Ichor.Node{rule: :pair, captures: %{key: "a", value: "1"}}, :ctx} =
-               Ichor.evaluate_node(raw, Support.NoActions, :ctx)
+    test "a glr grammar dispatches to Grammar.Native.GLR.generate/2" do
+      source = File.read!("test/ambig_tiebreak/ambig_tiebreak.aether")
+      assert same_generated?(source, "glr.aether", AmbigTiebreakTest.Actions, Grammar.Native.GLR)
     end
+
+    test "raises CompileError with a formatted message on a grammar that fails to parse" do
+      assert_raise CompileError, ~r/expected @grammar/, fn ->
+        Ichor.generate("not a valid grammar at all", "bad.aether", Support.NoActions)
+      end
+    end
+  end
+
+  defp same_generated?(source, file, actions_module, backend) do
+    {:ok, grammar} = Aether.Parser.parse(source, file)
+    {:ok, grammar} = Grammar.Analysis.run(grammar)
+    expected = Macro.to_string(backend.generate(grammar, actions_module))
+
+    Macro.to_string(Ichor.generate(source, file, actions_module)) == expected
   end
 end

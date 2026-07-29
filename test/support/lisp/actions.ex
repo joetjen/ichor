@@ -171,8 +171,9 @@ defmodule Lisp.Actions do
     expansion_ctx = bind_params(params, arg_values, ctx)
 
     with {:ok, expansion, expanded_ctx} <-
-           Ichor.evaluate_node(body_node, __MODULE__, expansion_ctx),
-         {:ok, result, final_ctx} <- Ichor.evaluate_node(unreify(expansion), __MODULE__, ctx) do
+           Ichor.Actions.evaluate_node(body_node, __MODULE__, expansion_ctx),
+         {:ok, result, final_ctx} <-
+           Ichor.Actions.evaluate_node(unreify(expansion), __MODULE__, ctx) do
       {:ok, result, %{final_ctx | macros: expanded_ctx.macros}}
     end
   end

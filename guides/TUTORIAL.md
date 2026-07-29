@@ -236,7 +236,84 @@ runtime (user-supplied config formats, a REPL that loads grammars on
 demand) and `Grammar.Native` for grammars fixed at compile time, where
 the extra speed is worth it.
 
-## 8. Where to go from here
+## 8. Shipping a compiled parser: `mix ichor.gen` and `ichor_runtime`
+
+`use Ichor` is convenient, but it means `Calculator`'s own `mix compile`
+re-parses `calculator.aether`, re-runs `Grammar.Analysis`, and re-runs
+the native codegen backend *every single time* — inside a macro
+expansion, on every compile, forever. For a grammar that's stopped
+changing, that's pure overhead: the codegen work only ever needs to
+happen once.
+
+`mix ichor.gen` runs that exact same parse → analyze → codegen pipeline
+from the command line instead, writing the result to a plain, ordinary
+`.ex` file you check in like any other source file:
+
+```sh
+mix ichor.gen calculator.aether \
+    --module Calculator \
+    --actions Calculator.Actions \
+    --out lib/calculator.ex
+```
+
+Open `lib/calculator.ex` afterward — it's exactly the same `tokenize/1`,
+`parse/1`, `run/1,2` functions `use Ichor` would have spliced in, just
+generated once and committed instead of regenerated on every compile.
+`Calculator.run("2 + 3 * 4")` still returns `{:ok, 14}`, identically.
+
+This is more than a compile-time optimization, though — it changes what
+your project needs installed *at all*. The generated file only ever
+calls a small, fixed set of support modules by name (`Ichor.Actions`,
+`Ichor.Error`, the compiled Tokenizer/Parser combinators, and — for an
+`@engine lr`/`glr` grammar — the LR/GLR runtime). That set is exactly
+what the separate, independently-published
+[`ichor_runtime`](https://hex.pm/packages/ichor_runtime) package is.
+`ichor` itself — the Aether front-end, every format importer,
+`Grammar.Analysis`, the LR/GLR table builder, and both codegen backends
+— never runs again once the file's been generated. A project that only
+ever uses pregenerated parsers can reflect that directly in `mix.exs`:
+
+```elixir
+def deps do
+  [
+    {:ichor_runtime, "~> 0.1.0"},
+    {:ichor, "~> 0.2.0", only: :dev, runtime: false}
+  ]
+end
+```
+
+`ichor` stops being something a `mix release` build ships at all — only
+`ichor_runtime`, the small piece the generated code actually calls,
+makes it into production. Regenerate by rerunning the same `mix
+ichor.gen` command whenever `calculator.aether` changes; there's no
+automatic staleness check between a checked-in generated file and its
+source grammar, so it's worth wiring into a `mix.exs` alias of your own
+(a `gen.grammar` alias calling `"ichor.gen ..."`, say) rather than typed
+by hand each time.
+
+`calculator.aether` doesn't have to be Aether source, either —
+`mix ichor.gen` also accepts ABNF, BNF, ISO EBNF, and PEG grammars,
+picking the style from the file's extension (`.abnf`, `.bnf`, `.ebnf`,
+`.peg`) or an explicit `@style abnf` line in the source. This is meant
+for reusing a grammar someone else already wrote in one of those
+formats — an RFC's own ABNF, say — without hand-translating it to
+Aether first; none of those formats have Aether's named captures or
+`@skip` convenience, so the generated parser's `Ichor.Actions` module
+only ever sees the default `Ichor.Node`/passthrough shape. See the
+[cheatsheet](CHEATSHEET.md#compile-a-grammar-ahead-of-time-mix-ichorgen)
+for the full extension table and `--root` flag.
+
+If your grammar has a `@native(...)` rule or token whose own callback
+needs something at *match* time — precedence-climbing expression parsing
+(`Ichor.Toolkit.Pratt`, driving the Prolog `op/3` example in
+[Examples](EXAMPLES.md)), generic term recursion
+(`Ichor.Toolkit.TermWalk`), or a unification/backtracking engine
+(`Ichor.Backtrack`) — those three are also part of `ichor_runtime`, not
+`ichor`: they're genuinely standalone, useful to any engine built on top
+of a generated parser, called on every match/evaluation rather than once
+at codegen time.
+
+## 9. Where to go from here
 
 - [Examples](EXAMPLES.md) walks through several complete, working
   grammars covering different shapes of problem: a LISP dialect (special
@@ -248,3 +325,6 @@ the extra speed is worth it.
   [Aether reference](aether/AETHER.md) cover every Aether feature this
   tutorial only touched on: POSIX character classes, `@indent`/
   `@samecol` for layout-sensitive grammars, case-insensitivity, and more.
+- [`ichor_runtime`'s own cheatsheet](https://hexdocs.pm/ichor_runtime/cheatsheet.html)
+  covers `Ichor.Toolkit.Pratt`/`TermWalk`/`Ichor.Backtrack` in depth —
+  worked examples for building an engine on top of a generated parser.

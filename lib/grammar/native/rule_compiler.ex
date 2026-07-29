@@ -8,23 +8,28 @@ defmodule Grammar.Native.RuleCompiler do
   producing direct function calls instead of bytecode.
 
   Every generated function has the shape `(stream :: tuple(), pos ::
-  non_neg_integer(), ref_stack :: [integer()]) -> {:ok, new_pos,
-  new_ref_stack, raw_captures} | :fail`, where `raw_captures` is exactly
-  the map shape `Ichor.Actions` expects (`{:token, name, text}` /
-  `{:rule, name, sub_captures}` / `{:text, text}`). A `RuleRef` compiles
-  to a call into that other rule/token's own compiled function; the
-  grammar's own token/rule namespaces (passed in as `token_names`) are
-  what tell the two apart, exactly as in the VM.
+  non_neg_integer(), ref_stack :: [integer()], context :: term()) ->
+  {:ok, new_pos, new_ref_stack, raw_captures} | :fail`, where
+  `raw_captures` is exactly the map shape `Ichor.Actions` expects
+  (`{:token, name, text}` / `{:rule, name, sub_captures}` / `{:text,
+  text}`). `context` is read-only, threaded through purely so a
+  `Grammar.IR.Custom` `@native(...)` leaf can hand it to
+  `c:Ichor.CustomRule.match/4` -- nothing else in this module ever reads
+  it, only passes it along. A `RuleRef` compiles to a call into that
+  other rule/token's own compiled function; the grammar's own token/rule
+  namespaces (passed in as `token_names`) are what tell the two apart,
+  exactly as in the VM.
   """
 
   alias Grammar.IR
-  alias Grammar.Native.Runtime
+  alias Grammar.Native.Runtime.Parser
   alias Grammar.VM.RuleCompiler, as: VMRuleCompiler
+  alias Ichor.Toolkit.Codegen
 
   @doc "Compiles every rule into a list of quoted `defp` definitions, one named `rule_fn_name/1` per rule plus one per anonymous sub-expression."
   @spec compile(Aether.Grammar.t()) :: [Macro.t()]
   def compile(grammar) do
-    token_names = MapSet.new(Map.keys(grammar.tokens))
+    token_names = VMRuleCompiler.token_names(grammar)
     anon_tokens = VMRuleCompiler.implicit_capture_exclusions(grammar)
 
     {defs, _counter} =
@@ -42,17 +47,12 @@ defmodule Grammar.Native.RuleCompiler do
   @spec rule_fn_name(atom()) :: atom()
   def rule_fn_name(name), do: :"parse_rule__#{name}"
 
-  defp fresh_name(counter), do: {:"parse_expr__#{counter}", counter + 1}
-
-  # See `Grammar.Native.CharCompiler`'s own note: `&name/arity` capture
-  # syntax can't be built via `quote`/`unquote` when `name` is a plain
-  # runtime atom, so the AST is constructed directly.
-  defp capture_fn(name, arity), do: {:&, [], [{:/, [], [{name, [], nil}, arity]}]}
+  defp fresh_name(counter), do: Codegen.fresh("parse_expr__", counter)
 
   @spec compile_expr(IR.expr(), non_neg_integer(), MapSet.t(), MapSet.t(), atom() | nil) ::
           {[Macro.t()], non_neg_integer()}
 
-  # ---- leaves: RuleRef/Capture/Indent (rule-level only) -----------------
+  # ---- leaves: RuleRef/Capture/Indent/Custom (rule-level only) ----------
 
   defp compile_expr(
          %IR.RuleRef{name: ref_name},
@@ -84,6 +84,31 @@ defmodule Grammar.Native.RuleCompiler do
     {[captured_ref_def(name, cap_name, ref_name, token_names)], counter}
   end
 
+  # `@native(...)`, bare or explicitly captured: like a bare `RuleRef`'s
+  # implicit self-capture, but there's no rule/token name to reuse, so the
+  # callback's own `function` name stands in for it.
+  defp compile_expr(
+         %IR.Capture{name: cap_name, expr: %IR.Custom{} = custom},
+         counter,
+         _token_names,
+         _anon_tokens,
+         preferred_name
+       ) do
+    {name, counter} = name_or_fresh(preferred_name, counter)
+    {[custom_def(name, cap_name, custom)], counter}
+  end
+
+  defp compile_expr(
+         %IR.Custom{function: function} = custom,
+         counter,
+         _token_names,
+         _anon_tokens,
+         preferred_name
+       ) do
+    {name, counter} = name_or_fresh(preferred_name, counter)
+    {[custom_def(name, function, custom)], counter}
+  end
+
   defp compile_expr(
          %IR.Capture{name: cap_name, expr: inner},
          counter,
@@ -93,23 +118,24 @@ defmodule Grammar.Native.RuleCompiler do
        ) do
     {name, counter} = name_or_fresh(preferred_name, counter)
     {inner_name, inner_defs, counter} = compile_one(inner, counter, token_names, anon_tokens)
-    stream = Macro.var(:stream, nil)
-    pos = Macro.var(:pos, nil)
-    ref_stack = Macro.var(:ref_stack, nil)
+
+    %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
 
     def_ =
       quote do
-        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack)) do
-          case unquote(capture_fn(inner_name, 3)).(
+        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+          case unquote(Codegen.capture(inner_name, 4)).(
                  unquote(stream),
                  unquote(pos),
-                 unquote(ref_stack)
+                 unquote(ref_stack),
+                 unquote(context)
                ) do
             {:ok, new_pos, new_ref_stack, inner_caps} ->
-              text = Runtime.concat_text(unquote(stream), unquote(pos), new_pos)
+              text = Parser.concat_text(unquote(stream), unquote(pos), new_pos)
 
               {:ok, new_pos, new_ref_stack,
-               Runtime.merge_captures(inner_caps, %{unquote(cap_name) => {:text, text}})}
+               Parser.merge_captures(inner_caps, %{unquote(cap_name) => {:text, text}})}
 
             # A wildcard, not a literal `:fail` pattern: when the compiler
             # can prove `inner_name`'s generated function always succeeds
@@ -134,18 +160,19 @@ defmodule Grammar.Native.RuleCompiler do
        ) do
     {name, counter} = name_or_fresh(preferred_name, counter)
     {inner_name, inner_defs, counter} = compile_one(e, counter, token_names, anon_tokens)
-    stream = Macro.var(:stream, nil)
-    pos = Macro.var(:pos, nil)
-    ref_stack = Macro.var(:ref_stack, nil)
+
+    %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
 
     def_ =
       quote do
-        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack)) do
-          Runtime.indent_enter(
-            unquote(capture_fn(inner_name, 3)),
+        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+          Parser.indent_enter(
+            unquote(Codegen.capture(inner_name, 4)),
             unquote(stream),
             unquote(pos),
-            unquote(ref_stack)
+            unquote(ref_stack),
+            unquote(context)
           )
         end
       end
@@ -162,18 +189,19 @@ defmodule Grammar.Native.RuleCompiler do
        ) do
     {name, counter} = name_or_fresh(preferred_name, counter)
     {inner_name, inner_defs, counter} = compile_one(e, counter, token_names, anon_tokens)
-    stream = Macro.var(:stream, nil)
-    pos = Macro.var(:pos, nil)
-    ref_stack = Macro.var(:ref_stack, nil)
+
+    %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
 
     def_ =
       quote do
-        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack)) do
-          Runtime.samecol_check(
-            unquote(capture_fn(inner_name, 3)),
+        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+          Parser.samecol_check(
+            unquote(Codegen.capture(inner_name, 4)),
             unquote(stream),
             unquote(pos),
-            unquote(ref_stack)
+            unquote(ref_stack),
+            unquote(context)
           )
         end
       end
@@ -187,25 +215,30 @@ defmodule Grammar.Native.RuleCompiler do
     {name, counter} = name_or_fresh(preferred_name, counter)
     {sub_names, sub_defs, counter} = compile_all(exprs, counter, token_names, anon_tokens)
 
-    stream = Macro.var(:stream, nil)
-    pos0 = Macro.var(:pos0, nil)
-    ref0 = Macro.var(:ref0, nil)
+    %{stream: stream, pos: pos0, ref_stack: ref0, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
 
-    {clauses, final_pos, final_ref, cap_vars} =
-      Enum.reduce(Enum.with_index(sub_names), {[], pos0, ref0, []}, fn {sub_name, i},
-                                                                       {clauses, cur_pos, cur_ref,
-                                                                        caps} ->
-        pos_var = Macro.var(:"pos#{i + 1}", nil)
-        ref_var = Macro.var(:"ref#{i + 1}", nil)
-        cap_var = Macro.var(:"cap#{i}", nil)
+    pos_vars = Codegen.indexed_vars(:pos, length(sub_names), 1)
+    ref_vars = Codegen.indexed_vars(:ref, length(sub_names), 1)
+    cap_vars = Codegen.indexed_vars(:cap, length(sub_names))
 
+    {clauses, final_pos, final_ref} =
+      [sub_names, pos_vars, ref_vars, cap_vars]
+      |> Enum.zip()
+      |> Enum.reduce({[], pos0, ref0}, fn {sub_name, pos_var, ref_var, cap_var},
+                                          {clauses, cur_pos, cur_ref} ->
         clause =
           quote do
             {:ok, unquote(pos_var), unquote(ref_var), unquote(cap_var)} <-
-              unquote(sub_name)(unquote(stream), unquote(cur_pos), unquote(cur_ref))
+              unquote(sub_name)(
+                unquote(stream),
+                unquote(cur_pos),
+                unquote(cur_ref),
+                unquote(context)
+              )
           end
 
-        {clauses ++ [clause], pos_var, ref_var, caps ++ [cap_var]}
+        {clauses ++ [clause], pos_var, ref_var}
       end)
 
     body =
@@ -219,7 +252,7 @@ defmodule Grammar.Native.RuleCompiler do
 
     def_ =
       quote do
-        defp unquote(name)(unquote(stream), unquote(pos0), unquote(ref0)) do
+        defp unquote(name)(unquote(stream), unquote(pos0), unquote(ref0), unquote(context)) do
           unquote(body)
         end
       end
@@ -233,14 +266,22 @@ defmodule Grammar.Native.RuleCompiler do
   defp compile_expr(%IR.Choice{exprs: exprs}, counter, token_names, anon_tokens, preferred_name) do
     {name, counter} = name_or_fresh(preferred_name, counter)
     {sub_names, sub_defs, counter} = compile_all(exprs, counter, token_names, anon_tokens)
-    {stream, pos, ref_stack} = srp()
 
-    funs = Enum.map(sub_names, &capture_fn(&1, 3))
+    %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
+
+    funs = Enum.map(sub_names, &Codegen.capture(&1, 4))
 
     def_ =
       quote do
-        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack)) do
-          Runtime.try_alts(unquote(funs), unquote(stream), unquote(pos), unquote(ref_stack))
+        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+          Parser.try_alts(
+            unquote(funs),
+            unquote(stream),
+            unquote(pos),
+            unquote(ref_stack),
+            unquote(context)
+          )
         end
       end
 
@@ -276,18 +317,21 @@ defmodule Grammar.Native.RuleCompiler do
        ) do
     {name, counter} = name_or_fresh(preferred_name, counter)
     {inner_name, inner_defs, counter} = compile_one(e, counter, token_names, anon_tokens)
-    {stream, pos, ref_stack} = srp()
+
+    %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
 
     def_ =
       quote do
-        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack)) do
-          Runtime.rep(
-            unquote(capture_fn(inner_name, 3)),
+        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+          Parser.rep(
+            unquote(Codegen.capture(inner_name, 4)),
             unquote(min),
             unquote(max),
             unquote(stream),
             unquote(pos),
-            unquote(ref_stack)
+            unquote(ref_stack),
+            unquote(context)
           )
         end
       end
@@ -301,11 +345,12 @@ defmodule Grammar.Native.RuleCompiler do
     stream = Macro.var(:stream, nil)
     pos = Macro.var(:pos, nil)
     ref_stack = Macro.var(:ref_stack, nil)
+    context = Macro.var(:_context, nil)
 
     quote do
-      defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack)) do
-        case Runtime.match_token(unquote(stream), unquote(pos), unquote(token_name)) do
-          {:ok, new_pos, _text} -> {:ok, new_pos, unquote(ref_stack), %{}}
+      defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+        case Parser.match_token(unquote(stream), unquote(pos), unquote(token_name)) do
+          {:ok, new_pos, _text, _capture} -> {:ok, new_pos, unquote(ref_stack), %{}}
           :fail -> :fail
         end
       end
@@ -318,12 +363,17 @@ defmodule Grammar.Native.RuleCompiler do
     ref_stack = Macro.var(:ref_stack, nil)
 
     if MapSet.member?(token_names, ref_name) do
+      context = Macro.var(:_context, nil)
+
       quote do
-        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack)) do
-          case Runtime.match_token(unquote(stream), unquote(pos), unquote(ref_name)) do
-            {:ok, new_pos, text} ->
+        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+          case Parser.match_token(unquote(stream), unquote(pos), unquote(ref_name)) do
+            {:ok, new_pos, text, nil} ->
               {:ok, new_pos, unquote(ref_stack),
                %{unquote(cap_name) => {:token, unquote(ref_name), text}}}
+
+            {:ok, new_pos, _text, capture} ->
+              {:ok, new_pos, unquote(ref_stack), %{unquote(cap_name) => capture}}
 
             :fail ->
               :fail
@@ -332,10 +382,16 @@ defmodule Grammar.Native.RuleCompiler do
       end
     else
       target = rule_fn_name(ref_name)
+      context = Macro.var(:context, nil)
 
       quote do
-        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack)) do
-          case unquote(target)(unquote(stream), unquote(pos), unquote(ref_stack)) do
+        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+          case unquote(target)(
+                 unquote(stream),
+                 unquote(pos),
+                 unquote(ref_stack),
+                 unquote(context)
+               ) do
             {:ok, new_pos, new_ref_stack, sub_captures} ->
               {:ok, new_pos, new_ref_stack,
                %{unquote(cap_name) => {:rule, unquote(ref_name), sub_captures}}}
@@ -348,19 +404,67 @@ defmodule Grammar.Native.RuleCompiler do
     end
   end
 
+  # `rule_matchers` closures are 2-arity ((stream, pos) -> ...), per
+  # `Ichor.CustomRule` -- each one closes over *this* call's own
+  # `ref_stack`/`context` rather than taking them as extra arguments, so
+  # the callback module never has to know either exists.
+  defp custom_def(name, cap_name, %IR.Custom{module: module, function: function, deps: deps}) do
+    stream = Macro.var(:stream, nil)
+    pos = Macro.var(:pos, nil)
+    ref_stack = Macro.var(:ref_stack, nil)
+    context = Macro.var(:context, nil)
+
+    matcher_entries =
+      Enum.map(deps, fn dep ->
+        dep_fn = rule_fn_name(dep)
+
+        quote do
+          {unquote(dep),
+           fn s, p ->
+             case unquote(dep_fn)(s, p, unquote(ref_stack), unquote(context)) do
+               {:ok, new_pos, _ref_stack, caps} -> {:ok, new_pos, {:rule, unquote(dep), caps}}
+               :fail -> :fail
+             end
+           end}
+        end
+      end)
+
+    quote do
+      defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+        rule_matchers = Map.new([unquote_splicing(matcher_entries)])
+
+        case apply(unquote(module), unquote(function), [
+               unquote(stream),
+               unquote(pos),
+               unquote(context),
+               rule_matchers
+             ]) do
+          {:ok, new_pos, capture} ->
+            {:ok, new_pos, unquote(ref_stack), %{unquote(cap_name) => capture}}
+
+          :fail ->
+            :fail
+        end
+      end
+    end
+  end
+
   defp unary_combinator(kind, e, counter, token_names, anon_tokens, preferred_name) do
     {name, counter} = name_or_fresh(preferred_name, counter)
     {inner_name, inner_defs, counter} = compile_one(e, counter, token_names, anon_tokens)
-    {stream, pos, ref_stack} = srp()
+
+    %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
 
     def_ =
       quote do
-        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack)) do
-          Runtime.unquote(kind)(
-            unquote(capture_fn(inner_name, 3)),
+        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+          Parser.unquote(kind)(
+            unquote(Codegen.capture(inner_name, 4)),
             unquote(stream),
             unquote(pos),
-            unquote(ref_stack)
+            unquote(ref_stack),
+            unquote(context)
           )
         end
       end
@@ -368,12 +472,10 @@ defmodule Grammar.Native.RuleCompiler do
     {inner_defs ++ [def_], counter}
   end
 
-  defp srp, do: {Macro.var(:stream, nil), Macro.var(:pos, nil), Macro.var(:ref_stack, nil)}
-
   defp merge_all([one]), do: one
 
   defp merge_all([first | rest]),
-    do: quote(do: Runtime.merge_captures(unquote(first), unquote(merge_all(rest))))
+    do: quote(do: Parser.merge_captures(unquote(first), unquote(merge_all(rest))))
 
   defp name_or_fresh(nil, counter), do: fresh_name(counter)
   defp name_or_fresh(name, counter), do: {name, counter}

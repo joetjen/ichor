@@ -29,7 +29,12 @@ defmodule Aether.Token do
           | :at_case_insensitive
           | :at_indent
           | :at_samecol
+          | :at_native
+          | :at_hint
+          | :at_keywords
+          | :at_refine
           | :define
+          | :arrow
           | :pipe
           | :star
           | :plus

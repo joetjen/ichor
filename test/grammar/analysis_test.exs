@@ -115,6 +115,39 @@ defmodule Grammar.AnalysisTest do
     end
   end
 
+  describe "@engine lr/glr: left recursion is left alone, not rewritten or rejected" do
+    test "a directly left-recursive rule (would be rewritten under :peg) passes through as-is" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root expr
+        @engine glr
+
+        PLUS := "+"
+        NUM  := /\d+/
+
+        expr := expr PLUS NUM | NUM
+        """)
+
+      assert %IR.Choice{exprs: [recursive, _base]} = grammar.rules[:expr]
+      assert %IR.Seq{exprs: [%IR.RuleRef{name: :expr} | _]} = recursive
+    end
+
+    test "an indirect left-recursive cycle (an error under :peg) also passes through" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root a
+        @engine lr
+        X := "x"
+        a := b X | X
+        b := a X | X
+        """)
+
+      assert grammar.engine == :lr
+    end
+  end
+
   describe "left-recursion: indirect case is detected but not auto-rewritten" do
     test "a two-rule cycle is reported for both participants" do
       errors =
@@ -146,6 +179,64 @@ defmodule Grammar.AnalysisTest do
       assert error.stage == :analysis
       assert error.message =~ "undefined token or rule :nope"
       assert error.line == 3
+    end
+  end
+
+  describe "@native(...) dependency checks" do
+    test "a dangling @native(...) dependency is reported, same as an ordinary dangling RuleRef" do
+      errors =
+        fails(~S"""
+        @grammar "t"
+        @root r
+        r := @native("M", "f", nope)
+        """)
+
+      assert [error] = errors
+      assert error.message =~ "@native(...) depends on undefined rule :nope"
+    end
+
+    # `nullable` feeds left-recursion rewriting's "does the remainder make
+    # progress" check, not the (deliberately stricter) empty-repetition
+    # lint -- a Custom node's `always_empty?` always answers `false`
+    # (opaque code proving "unconditionally zero-width" statically isn't
+    # possible; the runtime `test_progress` guard is the real safety net
+    # for that hazard, same as for every other node kind).
+    test "nullable: true makes a left-recursion rewrite's remainder-can't-be-empty check reject it" do
+      errors =
+        fails(~S"""
+        @grammar "t"
+        @root r
+        @noskip
+        r := r @native("M", "f") @hint(nullable: true) | "base"
+        """)
+
+      assert [error] = errors
+      assert error.message =~ "would produce an infinite loop"
+    end
+
+    test "with nullable defaulting to false, the same left-recursion rewrite succeeds" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        @noskip
+        r := r @native("M", "f") | "base"
+        """)
+
+      assert %IR.Seq{exprs: [%IR.RuleRef{}, %IR.Star{expr: %IR.Custom{}}]} = grammar.rules[:r]
+    end
+
+    test "with nullable defaulting to false, a Custom node wrapped in * is not flagged as an empty-repetition hazard" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        @noskip
+        primary := "x"
+        r := @native("M", "f", primary)*
+        """)
+
+      assert %IR.Star{expr: %IR.Custom{}} = grammar.rules[:r]
     end
   end
 

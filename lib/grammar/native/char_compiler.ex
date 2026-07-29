@@ -16,37 +16,48 @@ defmodule Grammar.Native.CharCompiler do
   combinators (`Seq`'s chain) that must build a call sequence whose
   length isn't known until compile time; those use `Macro.var(name,
   nil)` explicitly so every fragment agrees on the same variable.
+
+  A token whose entire body is a `Grammar.IR.CustomLexeme`
+  (`@native(...)` at token position) is pulled out separately instead of
+  compiled to a function here -- `Grammar.Native.generate/2` dispatches
+  to it directly by name (see `Grammar.VM.CharCompiler`'s own moduledoc
+  for why it can't be composed inside a larger token or referenced from
+  one).
   """
 
   alias Grammar.IR
-  alias Grammar.Native.Runtime
+  alias Grammar.Native.Runtime.Tokenizer
+  alias Ichor.Toolkit.Codegen
 
-  @doc "Compiles every declared token into a list of quoted `defp` definitions, one named `token_fn_name/1` per token plus one per anonymous sub-expression."
-  @spec compile(%{atom() => IR.expr()}) :: [Macro.t()]
+  @type custom_lexeme :: {module :: module(), function :: atom(), deps :: [atom()]}
+
+  @doc "Compiles every ordinary declared token into a list of quoted `defp` definitions, one named `token_fn_name/1` per token plus one per anonymous sub-expression, and separately returns every `Grammar.IR.CustomLexeme`-bodied token's own module/function/deps."
+  @spec compile(%{atom() => IR.expr()}) :: {[Macro.t()], %{atom() => custom_lexeme()}}
   def compile(tokens) do
+    {custom_lexemes, ordinary} = Enum.split_with(tokens, &custom_lexeme?/1)
+
+    custom_lexeme_map =
+      Map.new(custom_lexemes, fn {name, %IR.CustomLexeme{module: m, function: f, deps: d}} ->
+        {name, {m, f, d}}
+      end)
+
     {defs, _counter} =
-      Enum.reduce(tokens, {[], 0}, fn {name, ir}, {acc, counter} ->
+      Enum.reduce(ordinary, {[], 0}, fn {name, ir}, {acc, counter} ->
         {sub_defs, counter} = compile_expr(ir, counter, fn_name(name))
         {acc ++ sub_defs, counter}
       end)
 
-    defs
+    {defs, custom_lexeme_map}
   end
+
+  defp custom_lexeme?({_name, %IR.CustomLexeme{}}), do: true
+  defp custom_lexeme?(_), do: false
 
   @doc "The generated function name for a given token name -- exposed so `Grammar.Native` can reference a token's own matcher when generating the lexer's maximal-munch driver."
   @spec fn_name(atom()) :: atom()
   def fn_name(name), do: :"lex_token__#{name}"
 
-  defp fresh_name(counter), do: {:"lex_expr__#{counter}", counter + 1}
-
-  # `quote do: &unquote(name)/1` does NOT build a valid function-capture
-  # AST when `name` is a plain runtime atom -- it splices the atom
-  # straight into the `/` node's left slot (`{:/, _, [:foo, 1]}`) instead
-  # of the identifier-shaped node `&name/1` actually requires
-  # (`{:/, _, [{:foo, [], nil}, 1]}`), so ordinary `quote`/`unquote`
-  # can't express "capture this dynamically-named local function" --
-  # the AST has to be built directly.
-  defp capture_fn(name, arity), do: {:&, [], [{:/, [], [{name, [], nil}, arity]}]}
+  defp fresh_name(counter), do: Codegen.fresh("lex_expr__", counter)
 
   # Returns {defs, counter}. `preferred_name` is used for this node's own
   # function (the token's own name at the top level); every recursive
@@ -79,7 +90,7 @@ defmodule Grammar.Native.CharCompiler do
         defp unquote(name)(unquote(input)) do
           case unquote(input) do
             <<c::utf8, rest::binary>> ->
-              if Runtime.in_ranges?(c, unquote(ranges)) do
+              if Tokenizer.in_ranges?(c, unquote(ranges)) do
                 {:ok, <<c::utf8>>, rest}
               else
                 :fail
@@ -129,19 +140,19 @@ defmodule Grammar.Native.CharCompiler do
     {sub_names, sub_defs, counter} = compile_all(exprs, counter)
 
     input0 = Macro.var(:input0, nil)
+    text_vars = Codegen.indexed_vars(:t, length(sub_names))
+    rest_vars = Codegen.indexed_vars(:rest, length(sub_names))
 
-    {clauses, final_rest, text_vars} =
-      Enum.reduce(Enum.with_index(sub_names), {[], input0, []}, fn {sub_name, i},
-                                                                   {clauses, cur_input, texts} ->
-        text_var = Macro.var(:"t#{i}", nil)
-        rest_var = Macro.var(:"rest#{i}", nil)
-
+    {clauses, final_rest} =
+      [sub_names, text_vars, rest_vars]
+      |> Enum.zip()
+      |> Enum.reduce({[], input0}, fn {sub_name, text_var, rest_var}, {clauses, cur_input} ->
         clause =
           quote do
             {:ok, unquote(text_var), unquote(rest_var)} <- unquote(sub_name)(unquote(cur_input))
           end
 
-        {clauses ++ [clause], rest_var, texts ++ [text_var]}
+        {clauses ++ [clause], rest_var}
       end)
 
     body =
@@ -171,12 +182,12 @@ defmodule Grammar.Native.CharCompiler do
     {sub_names, sub_defs, counter} = compile_all(exprs, counter)
     input = Macro.var(:input, nil)
 
-    funs = Enum.map(sub_names, &capture_fn(&1, 1))
+    funs = Enum.map(sub_names, &Codegen.capture(&1, 1))
 
     def_ =
       quote do
         defp unquote(name)(unquote(input)) do
-          Runtime.first_char_match(unquote(funs), unquote(input))
+          Tokenizer.first_char_match(unquote(funs), unquote(input))
         end
       end
 
@@ -191,7 +202,7 @@ defmodule Grammar.Native.CharCompiler do
     def_ =
       quote do
         defp unquote(name)(unquote(input)) do
-          Runtime.star_char(unquote(capture_fn(sub_name, 1)), unquote(input))
+          Tokenizer.star_char(unquote(Codegen.capture(sub_name, 1)), unquote(input))
         end
       end
 
@@ -206,7 +217,7 @@ defmodule Grammar.Native.CharCompiler do
     def_ =
       quote do
         defp unquote(name)(unquote(input)) do
-          Runtime.plus_char(unquote(capture_fn(sub_name, 1)), unquote(input))
+          Tokenizer.plus_char(unquote(Codegen.capture(sub_name, 1)), unquote(input))
         end
       end
 
@@ -221,7 +232,7 @@ defmodule Grammar.Native.CharCompiler do
     def_ =
       quote do
         defp unquote(name)(unquote(input)) do
-          Runtime.opt_char(unquote(capture_fn(sub_name, 1)), unquote(input))
+          Tokenizer.opt_char(unquote(Codegen.capture(sub_name, 1)), unquote(input))
         end
       end
 
@@ -236,8 +247,8 @@ defmodule Grammar.Native.CharCompiler do
     def_ =
       quote do
         defp unquote(name)(unquote(input)) do
-          Runtime.rep_char(
-            unquote(capture_fn(sub_name, 1)),
+          Tokenizer.rep_char(
+            unquote(Codegen.capture(sub_name, 1)),
             unquote(min),
             :infinity,
             unquote(input)
@@ -256,8 +267,8 @@ defmodule Grammar.Native.CharCompiler do
     def_ =
       quote do
         defp unquote(name)(unquote(input)) do
-          Runtime.rep_char(
-            unquote(capture_fn(sub_name, 1)),
+          Tokenizer.rep_char(
+            unquote(Codegen.capture(sub_name, 1)),
             unquote(min),
             unquote(max),
             unquote(input)
@@ -276,7 +287,7 @@ defmodule Grammar.Native.CharCompiler do
     def_ =
       quote do
         defp unquote(name)(unquote(input)) do
-          Runtime.and_pred_char(unquote(capture_fn(sub_name, 1)), unquote(input))
+          Tokenizer.and_pred_char(unquote(Codegen.capture(sub_name, 1)), unquote(input))
         end
       end
 
@@ -291,7 +302,7 @@ defmodule Grammar.Native.CharCompiler do
     def_ =
       quote do
         defp unquote(name)(unquote(input)) do
-          Runtime.not_pred_char(unquote(capture_fn(sub_name, 1)), unquote(input))
+          Tokenizer.not_pred_char(unquote(Codegen.capture(sub_name, 1)), unquote(input))
         end
       end
 

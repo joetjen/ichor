@@ -1,0 +1,12 @@
+@grammar "peg_gap_peg"
+@root top
+@noskip
+
+; The classic "PEG's greedy commit dooms the parse" shape: `rule`'s
+; first alternative ("A A") greedily consumes both tokens on "aa",
+; succeeds, and PEG never reconsiders that already-successful match even
+; though `top`'s own trailing A then has nothing left to consume.
+A := "a"
+
+rule := A A | A
+top := rule A

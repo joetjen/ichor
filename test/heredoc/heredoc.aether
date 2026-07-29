@@ -1,0 +1,10 @@
+@grammar "heredoc"
+@root program
+@noskip
+
+HEREDOC := @native("Shell.Heredoc", "scan")
+
+; Each heredoc's own trailing newline (the one ending its terminator
+; line) is already consumed as part of its own matched text -- see
+; `Shell.Heredoc.scan/3` -- so back-to-back heredocs need no separator.
+program := HEREDOC*

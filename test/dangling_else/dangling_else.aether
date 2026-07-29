@@ -1,0 +1,32 @@
+@grammar "dangling_else"
+@root stmt
+@engine glr
+@skip WS
+
+; The textbook "dangling else" ambiguity every parser-generator course
+; uses -- real, present in C/Java/JavaScript/PHP's own grammars, unlike
+; `test/ambig_tiebreak/ambig_tiebreak.aether`'s deliberately abstract
+; "x matches rule a or rule b": `if c1 then if c2 then s1 else s2` --
+; does `else s2` belong to the inner `if c2` or the outer `if c1`?
+;
+; This grammar is genuinely ambiguous at the CFG level: a real
+; shift/reduce conflict. Having just reduced the inner `IF COND THEN
+; stmt`, and seeing `ELSE` next, the table can either shift it (attach
+; to the inner if) or reduce first (closing the inner if without an
+; else, leaving `ELSE` free for the *outer* if instead). Resolved
+; exactly the way real yacc/bison-generated parsers resolve it, with no
+; special-casing needed for this grammar at all:
+; `Grammar.LRTable.Automaton`'s canonical "shift before reduce"
+; conflict-cell ordering means `Grammar.GLR`'s own declared-order
+; tie-break always prefers the shift, attaching `else` to the nearest
+; still-open `if`.
+
+WS    := [ \t\n]+
+IF    := "if"
+THEN  := "then"
+ELSE  := "else"
+COND  := [a-z]
+OTHER := [0-9]
+
+stmt    := if_stmt | OTHER
+if_stmt := IF cond:COND THEN then_branch:stmt (ELSE else_branch:stmt)?

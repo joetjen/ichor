@@ -19,7 +19,12 @@ defmodule Aether.Lexer do
     "noskip" => :at_noskip,
     "case_insensitive" => :at_case_insensitive,
     "indent" => :at_indent,
-    "samecol" => :at_samecol
+    "samecol" => :at_samecol,
+    "native" => :at_native,
+    "hint" => :at_hint,
+    "keywords" => :at_keywords,
+    "refine" => :at_refine,
+    "engine" => :at_engine
   }
 
   @posix_classes %{
@@ -60,6 +65,10 @@ defmodule Aether.Lexer do
 
   defp scan(<<":=", rest::binary>>, source, line, col, file, acc) do
     emit(rest, source, line, col, 2, file, acc, :define)
+  end
+
+  defp scan(<<"->", rest::binary>>, source, line, col, file, acc) do
+    emit(rest, source, line, col, 2, file, acc, :arrow)
   end
 
   defp scan(<<"|", rest::binary>>, source, line, col, file, acc),

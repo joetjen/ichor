@@ -28,6 +28,7 @@ defmodule Ichor.PEG.Actions do
   @behaviour Ichor.Actions
 
   alias Grammar.IR
+  alias Ichor.Toolkit.Result
 
   # ---- leaf tokens -----------------------------------------------------
 
@@ -140,16 +141,15 @@ defmodule Ichor.PEG.Actions do
   defp wrap_alts(many), do: IR.choice(many)
 
   defp build_ruleset(rules) do
-    Enum.reduce_while(rules, {:ok, %{}}, fn {name, ir}, {:ok, acc} ->
+    Result.reduce_ok(rules, %{}, fn {name, ir}, acc ->
       if Map.has_key?(acc, name) do
-        {:halt,
-         {:error,
-          Ichor.Error.new(
-            message: "rule #{inspect(name)} defined more than once",
-            stage: :action
-          )}}
+        {:error,
+         Ichor.Error.new(
+           message: "rule #{inspect(name)} defined more than once",
+           stage: :action
+         )}
       else
-        {:cont, {:ok, Map.put(acc, name, ir)}}
+        {:ok, Map.put(acc, name, ir)}
       end
     end)
   end

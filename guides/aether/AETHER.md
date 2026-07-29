@@ -274,3 +274,200 @@ the rule always arrives as a **list** in `Ichor.Actions`, even if it
 matched zero or exactly one time — never a bare value, and never a
 missing key, so pattern-matching on capture shape is reliable regardless
 of how many times something actually matched.
+
+## `@engine`
+
+A grammar-wide pragma picking the parsing algorithm for `@root`:
+
+```text
+@engine peg   ; the default -- ordered-choice recursive descent
+@engine lr    ; deterministic shift-reduce, requires a conflict-free grammar
+@engine glr   ; Tomita-style GLR, forks at genuine ambiguity
+```
+
+Independent of which backend runs the grammar (`Grammar.VM` or
+`Grammar.Native`, i.e. `use Ichor`) — both support all three engines.
+`peg` (the default, so every grammar written before `@engine` existed
+keeps behaving identically) is ordinary top-down recursive descent: the
+first matching alternative wins, and left recursion is rewritten away by
+`Grammar.Analysis` automatically. `lr`/`glr` are bottom-up shift-reduce
+parsers built from a from-scratch SLR(1) table instead — the natural fit
+for **left-recursive** rules (`expr := expr "+" term | term`, not the
+PEG-idiomatic `term ("+" term)*`), which PEG can't parse at all but
+bottom-up parsing handles natively. `Grammar.Analysis` skips its
+left-recursion rewrite entirely for `lr`/`glr` grammars, since it would
+undo the very shape they want.
+
+- **`lr`** requires the resulting table be conflict-free — an ambiguous
+  or genuinely context-free (non-regular-per-rule) grammar is rejected
+  at compile/analysis time, naming the conflicting state and
+  productions, rather than silently picking one arbitrarily.
+- **`glr`** accepts conflicts and forks at them, exploring every viable
+  parse in parallel via a graph-structured stack that shares/merges
+  history at points where forks reconverge — this is what recovers
+  inputs plain PEG's greedy, never-reconsidered commit can't (a
+  `rule := "ab" | "a"` alternative that "wins" too early, with nothing
+  left over for what follows), and what lets a grammar express genuine
+  ambiguity (natural-language-style, or the classic dangling-`else`
+  problem) instead of being forced to silently favor one reading. When
+  more than one derivation survives to the end of input, the earliest
+  point the derivations disagree decides the winner, by **declared
+  order** — same convention ordinary PEG choice already uses (whichever
+  alternative/production was written first in the source wins), with one
+  refinement: at a conflict cell offering both a shift and a reduce, the
+  shift always wins (matching yacc/bison's own default), which is what
+  makes the dangling-`else` case resolve the way every real language
+  resolves it (`else` binds to the nearest open `if`) with no
+  special-casing anywhere.
+
+Only `Seq`/`Choice`/`Star`/`Plus`/`Opt`/`Rep`/`RuleRef`/`Capture` are
+supported inside an `lr`/`glr` rule — `&`/`!` lookahead predicates,
+`@indent`/`@samecol`, and rule-position `@native(...)` all need
+arbitrary backtracking or side-channel state a shift-reduce table has no
+room for, and are rejected with a build-time error naming the rule and
+construct. Token-level lexing (including token-position
+`@native(...)`) is unaffected either way — `lr`/`glr` still parse the
+same Tokenizer/Lexer-produced token stream a `peg` grammar would.
+
+```text
+@grammar "calculator"
+@root expr
+@engine lr
+
+NUMBER := /\d+(\.\d+)?/
+PLUS   := "+"
+
+expr := expr PLUS term | term
+term  := NUMBER
+```
+
+See `Grammar.LR`/`Grammar.GLR` (interpreted) and `Grammar.Native.LR`/
+`Grammar.Native.GLR` (compiled) for the engines themselves, and
+`Grammar.LRTable` for the shared SLR(1) table construction both draw on.
+
+## `@keywords` / `@refine`
+
+Reclassify a token *after* the Tokenizer matches it, *before* the Parser
+ever sees it — for a lexical distinction maximal munch alone can't make,
+because it depends on the token's own text (a keyword vs. an ordinary
+identifier with the same shape) or on what came immediately before it
+(JavaScript's `/`, which starts either a regex literal or a division
+operator depending on the preceding token).
+
+`@keywords` is sugar for the common table-lookup case:
+
+```text
+WORD := [a-zA-Z_][a-zA-Z0-9_]*
+@keywords WORD { "if" -> KEYWORD_IF, "return" -> KEYWORD_RETURN }
+```
+
+Every `WORD` token whose exact text matches a key in the table is
+renamed to the corresponding target token (`KEYWORD_IF`, `KEYWORD_RETURN`);
+anything else stays `WORD`. The target names never need their own
+`TOKEN := ...` declaration — `@keywords` is what tells `Grammar.Analysis`
+and the lexable-candidate-set computation they exist.
+
+`@refine("Module", "function", ...)` is the escape hatch for anything
+needing real logic instead of a fixed table — attached directly to a
+token's own definition:
+
+```text
+SLASH := "/" @refine("JS.SlashDisambiguator", "refine", DIV, REGEX_START)
+```
+
+The callback (`c:Ichor.TokenRefiner.refine/4`: `raw_name`, `raw_text`,
+`pos :: {line, column}`, and `preceding` — every token already
+reclassified so far, in final form, which is what makes the
+lookbehind-dependent JS case work) returns `{:ok, new_name, value}` (the
+new token name plus a capture-value override, e.g. a decoded escape
+sequence reaching `Ichor.Actions` instead of raw source text) or
+`{:error, reason}`, surfaced as an `Ichor.Error` with `stage: :lexer`.
+
+## `@native` / `@hint`: the escape hatch
+
+For the rare case a grammar's own meaning is mutated mid-file by
+something declared earlier — Prolog's runtime-extensible operator table
+(`op/3`), Haskell fixity declarations, a heredoc whose terminator is
+read off the source itself, a string literal with embedded interpolated
+expressions — no static grammar (PEG, LR, or GLR) can express the rule
+or token directly. `@native("Module", "function", dep, ...)` hands that
+one rule or token to hand-written Elixir instead.
+
+### At rule position (`Grammar.IR.Custom`)
+
+```text
+expr := @native("Prolog.Grammar", "parse_term", primary) @hint(nullable: false, leading: (primary))
+```
+
+`deps` (`primary` above) lists the *only* other rules the callback is
+allowed to call back into, via a `rule_matchers` map restricted to
+exactly those names — kept explicit so `Grammar.Analysis`'s reference
+check still sees this node's real dependencies even though its own body
+is opaque Elixir code. The callback (matching `c:Ichor.CustomRule.match/4`,
+though it doesn't have to be named `match` — `@native`'s own second
+argument names it explicitly) is:
+
+```elixir
+@callback match(stream, pos, context, rule_matchers) ::
+            {:ok, new_pos, Ichor.Capture.node_t()} | :fail
+```
+
+- `stream`/`pos` — the same compiled token stream and position any
+  ordinary rule matcher works over.
+- `context` — read-only: whatever the *previous* top-level form's own
+  evaluation produced (via `Grammar.VM.run_sequence/4`/
+  `Grammar.Native`'s generated `run_sequence/2`), or `initial_context`
+  outside a sequence. This is how a `:- op(700, xfx, is).` directive
+  parsed earlier in the same file can extend the operator table a later
+  clause's own `@native` callback parses against.
+- `rule_matchers` — `%{primary: (stream, pos -> {:ok, new_pos, node} | :fail)}`
+  for the example above: call straight back into the grammar's own
+  compiled `primary` rule.
+
+`@hint(nullable: bool, leading: (dep, ...))` supplies the two facts
+`Grammar.Analysis` would otherwise compute by walking the rule's own
+structure, impossible here since the body is arbitrary code: `nullable`
+defaults to `false` (most custom recognizers consume something),
+`leading` defaults to every declared dependency (conservative, for
+left-recursion-cycle detection). `Ichor.Toolkit.Pratt` is built exactly
+for writing this kind of callback — precedence-climbing over a
+runtime-mutable operator table is the single most common reason to reach
+for rule-position `@native` at all.
+
+### At token position (`Grammar.IR.CustomLexeme`)
+
+```text
+STRING := @native("JS.StringInterp", "scan", expr) @hint(nullable: false)
+```
+
+Always stands alone as an entire token definition — it can't be
+referenced from inside another token's body, and can't be composed
+inside a larger token expression. `deps` here names *rules* (never other
+tokens — the one narrow exception to "a token body may only reference
+other tokens"), reachable through a re-lex-from-a-character-position
+primitive rather than the token-stream-based `rule_matchers` rule
+position gets:
+
+```elixir
+@callback scan(input, context, rule_matchers) ::
+            {:ok, text, rest, Ichor.Capture.node_t() | nil} | :fail
+```
+
+- `input` — the *remaining suffix* of the source text (not a position
+  into some original string).
+- `context` — same meaning as `c:Ichor.CustomRule.match/4`'s.
+- `rule_matchers` — `%{expr: (input -> {:ok, text, rest, capture} | :fail)}`
+  for the example above: re-lexes `input` from scratch and matches the
+  named rule, for a token that needs to recurse into full rule-level
+  parsing mid-scan (an embedded `#{expr}` inside a string literal) —
+  something a fixed maximal-munch tokenizer has no way to express on its
+  own.
+
+Returns `{:ok, text, rest, capture}` with `text <> rest == input`.
+`capture` is normally `nil` (this token behaves like any other — a plain
+`{:token, name, text}` downstream); a string-interpolation token
+overrides it with an explicit `Ichor.Capture.node_t()` instead, so its
+embedded expressions' own parsed structure reaches `Ichor.Actions`
+intact rather than collapsing into flat text. `@hint(nullable: bool)` is
+the only hint here (`false` by default) — there's no `leading`, since
+left-recursion-cycle detection is a rule-level concept only.

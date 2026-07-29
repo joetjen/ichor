@@ -30,6 +30,7 @@ defmodule Grammar.Analysis do
 
   alias Grammar.IR
   alias Ichor.Error
+  alias Ichor.Toolkit.{Fixpoint, Graph}
 
   @doc """
   Runs every check above against `grammar`, returning the grammar with
@@ -49,9 +50,7 @@ defmodule Grammar.Analysis do
   end
 
   defp analyze(grammar, all_defs) do
-    nullable_before = compute_nullable(all_defs)
-
-    case rewrite_left_recursion(grammar, all_defs, nullable_before) do
+    case maybe_rewrite_left_recursion(grammar, all_defs) do
       {:ok, rewritten_defs} ->
         finish(grammar, rewritten_defs)
 
@@ -59,6 +58,20 @@ defmodule Grammar.Analysis do
         {:error, errors}
     end
   end
+
+  # Left-recursion rewriting is a PEG-specific accommodation -- plain
+  # recursive descent can't handle left recursion at all, so it has to be
+  # rewritten into iterative form or rejected. `:lr`/`:glr` grammars keep
+  # left recursion exactly as written: bottom-up shift-reduce parsing
+  # handles it natively (it's one of the things LR/GLR are actually
+  # better at than PEG), and the ambiguous/CFG-shaped grammars `Grammar.GLR`
+  # exists to accept are often exactly the ones this rewrite would reject.
+  defp maybe_rewrite_left_recursion(%{engine: :peg} = grammar, all_defs) do
+    nullable_before = compute_nullable(all_defs)
+    rewrite_left_recursion(grammar, all_defs, nullable_before)
+  end
+
+  defp maybe_rewrite_left_recursion(_grammar, all_defs), do: {:ok, all_defs}
 
   defp finish(grammar, all_defs) do
     always_empty = compute_always_empty(all_defs)
@@ -109,7 +122,11 @@ defmodule Grammar.Analysis do
   # ---- reference checks --------------------------------------------------
 
   defp reference_errors(grammar, all_defs) do
-    names = Map.keys(all_defs) |> MapSet.new()
+    names =
+      all_defs
+      |> Map.keys()
+      |> MapSet.new()
+      |> MapSet.union(Aether.Grammar.refiner_target_names(grammar.refiners))
 
     Enum.flat_map(all_defs, fn {_owner, ir} ->
       collect_dangling_refs(ir, names, grammar)
@@ -124,6 +141,29 @@ defmodule Grammar.Analysis do
     end
   end
 
+  # `Custom`'s dependencies never show up via `IR.children/1` (its body is
+  # opaque code, not a structural child), so its own reference check has
+  # to name them directly rather than falling out of the generic walk.
+  defp collect_dangling_refs(%IR.Custom{deps: deps} = custom, names, grammar) do
+    Enum.flat_map(deps, fn dep ->
+      if MapSet.member?(names, dep) do
+        []
+      else
+        [error(grammar, custom, "@native(...) depends on undefined rule #{inspect(dep)}")]
+      end
+    end)
+  end
+
+  defp collect_dangling_refs(%IR.CustomLexeme{deps: deps} = lexeme, names, grammar) do
+    Enum.flat_map(deps, fn dep ->
+      if MapSet.member?(names, dep) do
+        []
+      else
+        [error(grammar, lexeme, "@native(...) depends on undefined rule #{inspect(dep)}")]
+      end
+    end)
+  end
+
   defp collect_dangling_refs(ir, names, grammar) do
     Enum.flat_map(IR.children(ir), &collect_dangling_refs(&1, names, grammar))
   end
@@ -134,16 +174,13 @@ defmodule Grammar.Analysis do
   # on that input, so the rewrite must reject it). ------------------------
 
   defp compute_nullable(all_defs) do
-    fixpoint(&nullable?/2, MapSet.new(), all_defs)
+    Fixpoint.least(MapSet.new(), fn set -> step_names(all_defs, &nullable?/2, set) end)
   end
 
-  defp fixpoint(prop, set, all_defs) do
-    next =
-      Enum.reduce(all_defs, set, fn {name, ir}, acc ->
-        if prop.(ir, set), do: MapSet.put(acc, name), else: acc
-      end)
-
-    if MapSet.equal?(next, set), do: set, else: fixpoint(prop, next, all_defs)
+  defp step_names(all_defs, prop, set) do
+    Enum.reduce(all_defs, set, fn {name, ir}, acc ->
+      if prop.(ir, set), do: MapSet.put(acc, name), else: acc
+    end)
   end
 
   defp nullable?(%IR.Seq{exprs: exprs}, n), do: Enum.all?(exprs, &nullable?(&1, n))
@@ -161,6 +198,8 @@ defmodule Grammar.Analysis do
   defp nullable?(%IR.RuleRef{name: name}, n), do: MapSet.member?(n, name)
   defp nullable?(%IR.Indent{expr: e}, n), do: nullable?(e, n)
   defp nullable?(%IR.Capture{expr: e}, n), do: nullable?(e, n)
+  defp nullable?(%IR.Custom{nullable: nullable}, _n), do: nullable
+  defp nullable?(%IR.CustomLexeme{nullable: nullable}, _n), do: nullable
 
   # ---- "always empty": UNCONDITIONALLY zero-width, no matter the input --
   # this is the hazard the repetition check below exists for ("X{0}, or
@@ -174,7 +213,7 @@ defmodule Grammar.Analysis do
   # repetition into a real infinite loop.
 
   defp compute_always_empty(all_defs) do
-    fixpoint(&always_empty?/2, MapSet.new(), all_defs)
+    Fixpoint.least(MapSet.new(), fn set -> step_names(all_defs, &always_empty?/2, set) end)
   end
 
   defp always_empty?(%IR.Seq{exprs: exprs}, n), do: Enum.all?(exprs, &always_empty?(&1, n))
@@ -193,6 +232,14 @@ defmodule Grammar.Analysis do
   defp always_empty?(%IR.RuleRef{name: name}, n), do: MapSet.member?(n, name)
   defp always_empty?(%IR.Indent{expr: e}, n), do: always_empty?(e, n)
   defp always_empty?(%IR.Capture{expr: e}, n), do: always_empty?(e, n)
+
+  # Opaque code -- no structural way to prove "unconditionally zero-width
+  # no matter what," so this never itself trips the empty-repetition
+  # hazard check. `nullable` above (not this) is what a `@hint(...)`
+  # actually informs; a truly always-empty custom recognizer wrapped in
+  # `*`/`+` is the grammar author's own responsibility to avoid.
+  defp always_empty?(%IR.Custom{}, _n), do: false
+  defp always_empty?(%IR.CustomLexeme{}, _n), do: false
 
   # ---- left recursion: detection (sound, capture-transparent) -----------
 
@@ -220,14 +267,21 @@ defmodule Grammar.Analysis do
   defp leading_refs(%IR.Literal{}), do: MapSet.new()
   defp leading_refs(%IR.CharClass{}), do: MapSet.new()
   defp leading_refs(%IR.Any{}), do: MapSet.new()
+  defp leading_refs(%IR.Custom{leading: leading}), do: MapSet.new(leading)
 
-  defp reachable(name, graph), do: do_reachable([name], graph, MapSet.new())
+  # No `leading` hint exists at token position -- left-recursion-cycle
+  # detection is a rule-level concept, and a `CustomLexeme` can't be
+  # called via `{:call, name}` from anywhere else in the first place (see
+  # its own moduledoc), so it can never actually participate in a cycle.
+  defp leading_refs(%IR.CustomLexeme{}), do: MapSet.new()
 
-  defp do_reachable([], _graph, acc), do: acc
-
-  defp do_reachable([name | rest], graph, acc) do
-    next = graph |> Map.get(name, MapSet.new()) |> MapSet.difference(acc)
-    do_reachable(MapSet.to_list(next) ++ rest, graph, MapSet.union(acc, next))
+  # Seeded with `name`'s own neighbors, not `name` itself -- this is
+  # specifically "is `name` reachable from itself" (a genuine cycle), not
+  # trivial zero-hop self-membership, matching `Ichor.Toolkit.Graph.reachable/2`'s
+  # own "starting nodes are included" convention.
+  defp reachable(name, graph) do
+    neighbors_fn = fn n -> Map.get(graph, n, MapSet.new()) end
+    Graph.reachable(neighbors_fn.(name), neighbors_fn)
   end
 
   # ---- left recursion: automatic rewrite for the direct case ------------
@@ -412,4 +466,10 @@ defmodule Grammar.Analysis do
   defp strip_meta(%IR.RuleRef{name: n}), do: %IR.RuleRef{name: n}
   defp strip_meta(%IR.Indent{expr: e, kind: k}), do: %IR.Indent{expr: strip_meta(e), kind: k}
   defp strip_meta(%IR.Capture{name: n, expr: e}), do: %IR.Capture{name: n, expr: strip_meta(e)}
+
+  defp strip_meta(%IR.Custom{module: m, function: f, deps: d, nullable: nu, leading: l}),
+    do: %IR.Custom{module: m, function: f, deps: d, nullable: nu, leading: l}
+
+  defp strip_meta(%IR.CustomLexeme{module: m, function: f, deps: d, nullable: nu}),
+    do: %IR.CustomLexeme{module: m, function: f, deps: d, nullable: nu}
 end

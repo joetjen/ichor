@@ -1,20 +1,31 @@
 defmodule Ichor.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
+
+  # `mix precommit` includes `test` as a step; without this, Mix runs
+  # the whole alias chain (including `mix test`) in :dev, and `mix test`
+  # itself refuses to run outside :test when invoked as a sub-task
+  # rather than the top-level command.
+  def cli do
+    [preferred_envs: [precommit: :test]]
+  end
 
   def project do
     [
       app: :ichor,
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       description: description(),
       package: package(),
       name: "Ichor",
-      docs: docs()
+      docs: docs(),
+      aliases: aliases(),
+      test_coverage: [tool: ExCoveralls],
+      dialyzer: [plt_add_apps: [:mix]]
     ]
   end
 
@@ -31,7 +42,43 @@ defmodule Ichor.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ex_doc, "~> 0.40", only: :dev, runtime: false}
+      # === CODE QUALITY & STATIC ANALYSIS ===
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.14", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18", only: [:dev, :test], runtime: false},
+      # Credo is invoked via `MIX_ENV=test mix credo`
+      # Dialyzer is invoked via `MIX_ENV=test mix dialyzer`
+      # Sobelow is invoked via `MIX_ENV=test mix sobelow`
+      # Coveralls is invoked via `MIX_ENV=test mix coveralls
+
+      # === TESTING ===
+      {:mox, "~> 1.2", only: [:dev, :test]},
+      {:faker, "~> 0.19", only: [:test]},
+      {:stream_data, "~> 1.4", only: [:test]},
+
+      # === DEVELOPMENT TOOLING ===
+      # Mix, and Hex are built-in (no deps needed)
+      {:ex_doc, "~> 0.40", only: [:dev], runtime: false},
+      # ExDoc is invoked via `MIX_ENV=dev mix docs`
+
+      # === RUNTIME ===
+      {:ichor_runtime, "~> 0.1.0"}
+    ]
+  end
+
+  # Fast/cheap checks first so a broken commit fails quickly; dialyzer
+  # (slowest, especially its first PLT build) runs last.
+  defp aliases do
+    [
+      precommit: [
+        "format",
+        "compile --warnings-as-errors",
+        "credo --strict",
+        "sobelow",
+        "test",
+        "dialyzer"
+      ]
     ]
   end
 
@@ -44,13 +91,16 @@ defmodule Ichor.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      files: ~w(lib priv/grammar .formatter.exs mix.exs README.md CHANGELOG.md LICENSE.txt)
+      links: %{"GitHub" => "https://github.com/joetjen/ichor"},
+      files: ~w(lib priv/grammar .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 
   defp docs do
     [
       main: "readme",
+      source_url: "https://github.com/joetjen/ichor",
+      source_ref: "v#{@version}",
       extras: extras(),
       groups_for_extras: groups_for_extras(),
       groups_for_modules: groups_for_modules()
@@ -69,7 +119,7 @@ defmodule Ichor.MixProject do
       "guides/aether/AETHER_CHEATSHEET.md",
       "CHANGELOG.md",
       "CONTRIBUTION.md",
-      "LICENSE.txt"
+      "LICENSE"
     ]
   end
 
@@ -83,10 +133,7 @@ defmodule Ichor.MixProject do
     [
       Core: [
         Ichor,
-        Ichor.Actions,
-        Ichor.Capture,
-        Ichor.Node,
-        Ichor.Error
+        Ichor.GrammarImport
       ],
       "Grammar IR": [
         Grammar.IR,
@@ -124,18 +171,17 @@ defmodule Ichor.MixProject do
         Grammar.VM.Linker,
         Grammar.VM.Program,
         Grammar.VM.RuleCompiler,
-        Grammar.VM.Token,
         Grammar.VM.TokenInterpreter
       ],
       "Native Backend": [
         Grammar.Native,
         Grammar.Native.CharCompiler,
-        Grammar.Native.RuleCompiler,
-        Grammar.Native.Runtime
+        Grammar.Native.RuleCompiler
       ],
       Tooling: [
         Grammar.Tokens,
-        Mix.Tasks.Ichor.Tokens
+        Mix.Tasks.Ichor.Tokens,
+        Mix.Tasks.Ichor.Gen
       ],
       "Format Importers": [
         Ichor.ABNF,
