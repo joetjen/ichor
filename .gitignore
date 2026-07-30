@@ -24,3 +24,6 @@ ichor-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# macOS Finder metadata.
+.DS_Store

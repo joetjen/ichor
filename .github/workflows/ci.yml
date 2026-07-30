@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  precommit:
+    name: Precommit (OTP ${{ matrix.otp }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Latest few common OTP releases; Elixir pinned to .tool-versions.
+          - otp: "28"
+            elixir: "1.19"
+          - otp: "27"
+            elixir: "1.19"
+          - otp: "26"
+            elixir: "1.19"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+
+      - name: Restore deps/_build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # format, compile --warnings-as-errors, credo --strict, sobelow,
+      # test, dialyzer -- see the `precommit` alias in mix.exs.
+      - name: Precommit
+        run: mix precommit
+
+  hex-build:
+    name: Hex build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28"
+          elixir-version: "1.19"
+
+      - name: Restore deps/_build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-otp28-elixir1.19-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-otp28-elixir1.19-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # Verifies the package (files list in mix.exs) actually assembles
+      # into a valid Hex tarball, without publishing it.
+      - name: Hex build
+        run: mix hex.build
