@@ -72,8 +72,8 @@ dependency:
 ```elixir
 def deps do
   [
-    {:ichor_runtime, "~> 0.1.0"},
-    {:ichor, "~> 0.2.0", only: :dev, runtime: false}
+    {:ichor_runtime, "~> 0.2"},
+    {:ichor, "~> 0.2", only: :dev, runtime: false}
   ]
 end
 ```

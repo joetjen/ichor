@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** bumped `ichor_runtime` to `~> 0.2` (from `~> 0.1.0`), whose
+  0.2.0 changed raw capture data (`Ichor.Capture.node_t/0`'s `:rule`
+  variant, and therefore every `parse/1`-style bare-recognizer function
+  `use Ichor`/`Grammar.Native`/`Grammar.Native.LR`/`Grammar.Native.GLR`/
+  `Grammar.LR`/`Grammar.GLR`/`Grammar.VM` generate or expose) from a
+  plain `%{name => value}` map to an ordered `[{name, value}]` list
+  (`Ichor.Capture.raw_captures/0`), fixing sibling-capture evaluation
+  order depending on a plain map's own (cross-OTP-version-unstable)
+  iteration order instead of true first-occurrence source order. Ported
+  the same fix to `Grammar.VM.TokenInterpreter` (this project's own
+  reference/interpreted PEG path, which ichor_runtime doesn't own) for
+  parity with the native backend, and updated `Grammar.Native.RuleCompiler`'s
+  generated code and `Ichor.GrammarImport`'s hand-written capture
+  pattern-matches to the new list shape. Any hand-written
+  `Ichor.Actions` module that pattern-matches or constructs
+  `raw_captures`/`node_t()` values directly (e.g. for macro-expansion
+  via `Ichor.Actions.evaluate_node/3`) needs the same `%{name: value}`
+  -> `[{name, value}]`/`[name: value]` update -- the already-*evaluated*
+  `Ichor.Actions.captures/0` map handed to `handle_rule/3` callbacks is
+  unchanged.
+
 ## [0.2.1] - 2026-07-29
 
 ### Changed

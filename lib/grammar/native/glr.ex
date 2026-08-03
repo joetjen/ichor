@@ -83,7 +83,7 @@ defmodule Grammar.Native.GLR do
 
       @doc "Matches `input` against the grammar's root rule, requiring the entire (tokenized) input to be consumed. A bare recognizer -- no `Ichor.Actions` involved."
       @spec parse(String.t(), term()) ::
-              {:ok, non_neg_integer(), map()} | {:error, Ichor.Error.t()}
+              {:ok, non_neg_integer(), Ichor.Capture.raw_captures()} | {:error, Ichor.Error.t()}
       def parse(input, context \\ nil) do
         with {:ok, tokens} <- tokenize(input, context) do
           stream = List.to_tuple(tokens)
