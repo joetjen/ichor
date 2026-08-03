@@ -118,7 +118,7 @@ defmodule Ichor.MixProject do
       "guides/aether/AETHER_EXAMPLES.md",
       "guides/aether/AETHER_CHEATSHEET.md",
       "CHANGELOG.md",
-      "CONTRIBUTION.md",
+      "CONTRIBUTING.md",
       "LICENSE"
     ]
   end

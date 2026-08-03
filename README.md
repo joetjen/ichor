@@ -253,7 +253,7 @@ mix compile --warnings-as-errors
 mix docs
 ```
 
-See [CONTRIBUTION.md](CONTRIBUTION.md) for how to propose changes, and
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose changes, and
 [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
