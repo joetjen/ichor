@@ -63,7 +63,7 @@ defmodule Ichor.MixProject do
       # ExDoc is invoked via `MIX_ENV=dev mix docs`
 
       # === RUNTIME ===
-      {:ichor_runtime, "~> 0.1.0"}
+      {:ichor_runtime, "~> 0.2"}
     ]
   end
 

@@ -271,18 +271,27 @@ defmodule Lisp.Actions do
       # matched zero times, since this reads `.node` directly rather than
       # going through `dispatch_rule`'s own normalization (the same
       # "missing key vs. empty list" ambiguity as `handle_rule`'s own
-      # captures map, just here for reify instead).
-      {:rule, :list, %{} = captures} ->
-        Map.get(captures, :form, []) |> List.wrap() |> Enum.map(&reify_capture_or_node/1)
+      # captures map, just here for reify instead). `captures` is a raw
+      # `Ichor.Capture.raw_captures/0` ordered list here, not the
+      # evaluated map `handle_rule/3` gets -- `Keyword.get/3` reads it the
+      # same way `Map.get/3` used to.
+      {:rule, :list, captures} ->
+        Elixir.Keyword.get(captures, :form, [])
+        |> List.wrap()
+        |> Enum.map(&reify_capture_or_node/1)
 
-      {:rule, :vector, %{} = captures} ->
-        forms = Map.get(captures, :form, []) |> List.wrap() |> Enum.map(&reify_capture_or_node/1)
+      {:rule, :vector, captures} ->
+        forms =
+          Elixir.Keyword.get(captures, :form, [])
+          |> List.wrap()
+          |> Enum.map(&reify_capture_or_node/1)
+
         %Vector{items: forms}
 
-      {:rule, :map, %{} = captures} ->
+      {:rule, :map, captures} ->
         pairs =
           captures
-          |> Map.get(:form, [])
+          |> Elixir.Keyword.get(:form, [])
           |> List.wrap()
           |> Enum.map(&reify_capture_or_node/1)
           |> Enum.chunk_every(2)
@@ -290,17 +299,23 @@ defmodule Lisp.Actions do
 
         %Lisp.Map{pairs: pairs}
 
-      {:rule, :quote_sugar, %{form: f}} ->
-        [%Symbol{name: "quote"}, reify_capture_or_node(f)]
+      {:rule, :quote_sugar, captures} ->
+        [%Symbol{name: "quote"}, reify_capture_or_node(Elixir.Keyword.fetch!(captures, :form))]
 
-      {:rule, :quasiquote_sugar, %{form: f}} ->
-        [%Symbol{name: "quasiquote"}, reify_capture_or_node(f)]
+      {:rule, :quasiquote_sugar, captures} ->
+        [
+          %Symbol{name: "quasiquote"},
+          reify_capture_or_node(Elixir.Keyword.fetch!(captures, :form))
+        ]
 
-      {:rule, :unquote_sugar, %{form: f}} ->
-        [%Symbol{name: "unquote"}, reify_capture_or_node(f)]
+      {:rule, :unquote_sugar, captures} ->
+        [%Symbol{name: "unquote"}, reify_capture_or_node(Elixir.Keyword.fetch!(captures, :form))]
 
-      {:rule, :unquote_splice_sugar, %{form: f}} ->
-        [%Symbol{name: "unquote-splice"}, reify_capture_or_node(f)]
+      {:rule, :unquote_splice_sugar, captures} ->
+        [
+          %Symbol{name: "unquote-splice"},
+          reify_capture_or_node(Elixir.Keyword.fetch!(captures, :form))
+        ]
 
       {:text, text} ->
         text
@@ -313,12 +328,12 @@ defmodule Lisp.Actions do
   @spec unreify(term()) :: Ichor.Capture.node_t()
   def unreify(%Symbol{name: name}), do: {:token, :SYMBOL, name}
   def unreify(%Keyword{name: name}), do: {:token, :KEYWORD, ":" <> name}
-  def unreify(list) when is_list(list), do: {:rule, :list, %{form: Enum.map(list, &unreify/1)}}
-  def unreify(%Vector{items: items}), do: {:rule, :vector, %{form: Enum.map(items, &unreify/1)}}
+  def unreify(list) when is_list(list), do: {:rule, :list, [form: Enum.map(list, &unreify/1)]}
+  def unreify(%Vector{items: items}), do: {:rule, :vector, [form: Enum.map(items, &unreify/1)]}
 
   def unreify(%Lisp.Map{pairs: pairs}) do
     forms = Enum.flat_map(pairs, fn {k, v} -> [unreify(k), unreify(v)] end)
-    {:rule, :map, %{form: forms}}
+    {:rule, :map, [form: forms]}
   end
 
   def unreify(n) when is_integer(n), do: {:token, :NUMBER, Integer.to_string(n)}
@@ -332,7 +347,7 @@ defmodule Lisp.Actions do
   # up, after unwrapping through `form` then `atom`, as plain
   # `{:token, :SYMBOL, "quote"}`.
   defp unwrap({:rule, _name, captures} = raw) do
-    case Map.to_list(captures) do
+    case captures do
       [{_key, %Ichor.Capture{node: single}}] -> unwrap(single)
       [{_key, single}] when not is_list(single) -> unwrap(single)
       _ -> raw

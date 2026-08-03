@@ -36,7 +36,8 @@ defmodule Grammar.NativeTest do
 
   describe "parse/1 (bare recognizer, no Ichor.Actions)" do
     test "returns the consumed token count and the raw capture tree" do
-      assert {:ok, pos, %{term: _}} = Native.Calculator.parse("2 + 3")
+      assert {:ok, pos, raw_captures} = Native.Calculator.parse("2 + 3")
+      assert Keyword.has_key?(raw_captures, :term)
       assert {:ok, tokens} = Native.Calculator.tokenize("2 + 3")
       assert pos == length(tokens)
     end
