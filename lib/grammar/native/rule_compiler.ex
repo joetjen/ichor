@@ -10,9 +10,11 @@ defmodule Grammar.Native.RuleCompiler do
   Every generated function has the shape `(stream :: tuple(), pos ::
   non_neg_integer(), ref_stack :: [integer()], context :: term()) ->
   {:ok, new_pos, new_ref_stack, raw_captures} | :fail`, where
-  `raw_captures` is exactly the map shape `Ichor.Actions` expects
-  (`{:token, name, text}` / `{:rule, name, sub_captures}` / `{:text,
-  text}`). `context` is read-only, threaded through purely so a
+  `raw_captures` is exactly the ordered-list shape `Ichor.Actions`
+  expects (`{:token, name, text}` / `{:rule, name, sub_captures}` /
+  `{:text, text}` values, keyed by name, in first-occurrence RHS
+  order -- see `Ichor.Capture.raw_captures/0`). `context` is read-only,
+  threaded through purely so a
   `Grammar.IR.Custom` `@native(...)` leaf can hand it to
   `c:Ichor.CustomRule.match/4` -- nothing else in this module ever reads
   it, only passes it along. A `RuleRef` compiles to a call into that
@@ -135,7 +137,7 @@ defmodule Grammar.Native.RuleCompiler do
               text = Parser.concat_text(unquote(stream), unquote(pos), new_pos)
 
               {:ok, new_pos, new_ref_stack,
-               Parser.merge_captures(inner_caps, %{unquote(cap_name) => {:text, text}})}
+               Parser.merge_captures(inner_caps, [{unquote(cap_name), {:text, text}}])}
 
             # A wildcard, not a literal `:fail` pattern: when the compiler
             # can prove `inner_name`'s generated function always succeeds
@@ -350,7 +352,7 @@ defmodule Grammar.Native.RuleCompiler do
     quote do
       defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
         case Parser.match_token(unquote(stream), unquote(pos), unquote(token_name)) do
-          {:ok, new_pos, _text, _capture} -> {:ok, new_pos, unquote(ref_stack), %{}}
+          {:ok, new_pos, _text, _capture} -> {:ok, new_pos, unquote(ref_stack), []}
           :fail -> :fail
         end
       end
@@ -370,10 +372,10 @@ defmodule Grammar.Native.RuleCompiler do
           case Parser.match_token(unquote(stream), unquote(pos), unquote(ref_name)) do
             {:ok, new_pos, text, nil} ->
               {:ok, new_pos, unquote(ref_stack),
-               %{unquote(cap_name) => {:token, unquote(ref_name), text}}}
+               [{unquote(cap_name), {:token, unquote(ref_name), text}}]}
 
             {:ok, new_pos, _text, capture} ->
-              {:ok, new_pos, unquote(ref_stack), %{unquote(cap_name) => capture}}
+              {:ok, new_pos, unquote(ref_stack), [{unquote(cap_name), capture}]}
 
             :fail ->
               :fail
@@ -394,7 +396,7 @@ defmodule Grammar.Native.RuleCompiler do
                ) do
             {:ok, new_pos, new_ref_stack, sub_captures} ->
               {:ok, new_pos, new_ref_stack,
-               %{unquote(cap_name) => {:rule, unquote(ref_name), sub_captures}}}
+               [{unquote(cap_name), {:rule, unquote(ref_name), sub_captures}}]}
 
             _fail ->
               :fail
@@ -440,7 +442,7 @@ defmodule Grammar.Native.RuleCompiler do
                rule_matchers
              ]) do
           {:ok, new_pos, capture} ->
-            {:ok, new_pos, unquote(ref_stack), %{unquote(cap_name) => capture}}
+            {:ok, new_pos, unquote(ref_stack), [{unquote(cap_name), capture}]}
 
           :fail ->
             :fail

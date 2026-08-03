@@ -5,10 +5,16 @@ defmodule Grammar.VM.TokenInterpreter do
 
   Alongside recognition, it builds the raw capture tree `Ichor.Actions`
   needs: each rule invocation gets its own "frame" (a
-  `%{pending: [...], captures: %{}}` accumulator), pushed on `:call` and
+  `%{pending: [...], captures: []}` accumulator), pushed on `:call` and
   popped on `:return`, populated by the `:cap_start`/`:cap_end` pairs
   `Grammar.VM.RuleCompiler` brackets every capture (implicit or explicit)
-  with.
+  with. `captures` is an ordered list, not a map -- list order is the
+  one thing Elixir actually guarantees, which is what lets
+  `Ichor.Actions.eval_all/2` evaluate sibling captures in true source
+  order instead of trusting a plain map's own (cross-OTP-version-
+  unstable) iteration order; `merge_capture/3` mirrors
+  `Grammar.Native.Runtime.Parser.merge_one/3` (from `ichor_runtime`)
+  exactly, for parity with the native backend.
 
   Structurally the same backtracking discipline as
   `Grammar.VM.CharInterpreter` (including snapshotting the call stack in
@@ -31,8 +37,9 @@ defmodule Grammar.VM.TokenInterpreter do
   """
 
   alias Grammar.VM.Token
+  alias Ichor.Capture
 
-  @type raw_capture :: {:token, atom(), String.t()} | {:rule, atom(), map()} | {:text, String.t()}
+  @type raw_capture :: Capture.node_t()
 
   @type rule_matcher :: (tuple(), non_neg_integer() ->
                            {:ok, non_neg_integer(), raw_capture()} | :fail)
@@ -40,17 +47,17 @@ defmodule Grammar.VM.TokenInterpreter do
   @doc """
   Attempts to match `entry` against `stream` (a tuple of `Grammar.VM.Token`,
   for O(1) indexed access) starting at position 0. On success, returns the
-  first unconsumed stream index and the matched rule's own raw capture
-  map -- the caller decides whether the index means "matched everything".
+  first unconsumed stream index and the matched rule's own raw captures
+  list -- the caller decides whether the index means "matched everything".
   """
   @spec run(tuple(), non_neg_integer(), tuple(), term()) ::
-          {:ok, non_neg_integer(), %{optional(atom()) => raw_capture() | [raw_capture()]}} | :fail
+          {:ok, non_neg_integer(), Capture.raw_captures()} | :fail
   def run(instructions, entry, stream, context \\ nil),
     do: run_from(instructions, entry, stream, 0, context)
 
   @doc "Like `run/4`, but starts at `start_pos` instead of 0 -- for matching one of *several* top-level occurrences in the same stream (`Grammar.VM.run_sequence/4`)."
   @spec run_from(tuple(), non_neg_integer(), tuple(), non_neg_integer(), term()) ::
-          {:ok, non_neg_integer(), %{optional(atom()) => raw_capture() | [raw_capture()]}} | :fail
+          {:ok, non_neg_integer(), Capture.raw_captures()} | :fail
   def run_from(instructions, entry, stream, start_pos, context \\ nil) do
     loop(
       instructions,
@@ -66,7 +73,7 @@ defmodule Grammar.VM.TokenInterpreter do
     )
   end
 
-  defp fresh_frame, do: %{pending: [], captures: %{}}
+  defp fresh_frame, do: %{pending: [], captures: []}
 
   defp loop(instrs, ip, pos, stream, ref_stack, backtrack, calls, frame, last_result, context) do
     case elem(instrs, ip) do
@@ -380,17 +387,22 @@ defmodule Grammar.VM.TokenInterpreter do
     Enum.map_join(start_pos..(end_pos - 1)//1, "", fn i -> elem(stream, i).text end)
   end
 
-  # First occurrence of `name` in this frame stores the raw value directly;
-  # a second occurrence promotes it to a list; a third+ appends -- so a
-  # capture inside a `Star`/`Plus` naturally ends up as a list without the
-  # caller having to know in advance how many times it'll match.
+  # First occurrence of `name` in this frame is appended at the end (landing
+  # at its first-occurrence position, as `raw`, unwrapped); a second
+  # occurrence promotes it to a list, in place, not moving it; a third+
+  # appends to that list, in place -- so a capture inside a `Star`/`Plus`
+  # naturally ends up as a list without the caller having to know in advance
+  # how many times it'll match. Mirrors `Grammar.Native.Runtime.Parser`'s
+  # own private `merge_one`/`as_list` helpers (from `ichor_runtime`) exactly.
   defp merge_capture(captures, name, raw) do
-    case Map.fetch(captures, name) do
-      :error -> Map.put(captures, name, raw)
-      {:ok, existing} when is_list(existing) -> Map.put(captures, name, existing ++ [raw])
-      {:ok, existing} -> Map.put(captures, name, [existing, raw])
+    case List.keyfind(captures, name, 0) do
+      nil -> captures ++ [{name, raw}]
+      {^name, existing} -> List.keyreplace(captures, name, 0, {name, as_list(existing) ++ [raw]})
     end
   end
+
+  defp as_list(v) when is_list(v), do: v
+  defp as_list(v), do: [v]
 
   defp at(stream, pos) when pos < tuple_size(stream), do: elem(stream, pos)
   defp at(_stream, _pos), do: nil

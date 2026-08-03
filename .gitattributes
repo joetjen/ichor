@@ -1,0 +1,6 @@
+# These fixtures embed a literal CR LF byte sequence inside a quoted
+# string literal to define a grammar's `crlf` token. Treat them as
+# binary so git never rewrites line endings and silently corrupts
+# that literal.
+test/http/http.peg -text
+test/http/http.ebnf -text

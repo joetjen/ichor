@@ -194,80 +194,71 @@ defmodule Ichor.GrammarImport do
   # can be looked up as an ordinary key, not so anyone could recover
   # declaration order from it afterward). `parse/1` -- already generated
   # by each importer's own `use Ichor`, no importer changes needed at
-  # all -- returns the *raw*, unevaluated capture tree instead, which
-  # still has it: a `Star`/`Plus`-captured name arrives as a list in
-  # match order (or, with exactly one occurrence, as a bare node --
+  # all -- returns the *raw*, unevaluated capture tree instead (an
+  # `Ichor.Capture.raw_captures/0` ordered list, not a map), which still
+  # has it: a `Star`/`Plus`-captured name arrives as a list in match
+  # order (or, with exactly one occurrence, as a bare node --
   # `List.wrap/1` handles both uniformly).
 
   defp rule_order(:abnf, source) do
-    with {:ok, _pos, %{rule: rule_caps}} <- Ichor.ABNF.parse(source) do
+    with {:ok, _pos, raw_captures} <- Ichor.ABNF.parse(source) do
       names =
-        rule_caps
+        raw_captures
+        |> Keyword.get(:rule, [])
         |> List.wrap()
-        |> Enum.map(fn {:rule, :rule, %{RULENAME: {:token, :RULENAME, text}}} ->
+        |> Enum.map(fn {:rule, :rule, caps} ->
+          {:token, :RULENAME, text} = Keyword.fetch!(caps, :RULENAME)
           text |> String.downcase() |> String.to_atom()
         end)
 
       {:ok, names}
-    else
-      {:ok, _pos, _captures_without_rule} -> {:ok, []}
-      error -> error
     end
   end
 
   defp rule_order(:bnf, source) do
-    with {:ok, _pos, %{rule: rule_caps}} <- Ichor.BNF.parse(source) do
+    with {:ok, _pos, raw_captures} <- Ichor.BNF.parse(source) do
       names =
-        rule_caps
+        raw_captures
+        |> Keyword.get(:rule, [])
         |> List.wrap()
-        |> Enum.map(fn {:rule, :rule,
-                        %{
-                          nonterminal:
-                            {:rule, :nonterminal, %{NONTERM_NAME: {:token, :NONTERM_NAME, text}}}
-                        }} ->
+        |> Enum.map(fn {:rule, :rule, caps} ->
+          {:rule, :nonterminal, nonterm_caps} = Keyword.fetch!(caps, :nonterminal)
+          {:token, :NONTERM_NAME, text} = Keyword.fetch!(nonterm_caps, :NONTERM_NAME)
           String.to_atom(text)
         end)
 
       {:ok, names}
-    else
-      {:ok, _pos, _captures_without_rule} -> {:ok, []}
-      error -> error
     end
   end
 
   defp rule_order(:ebnf_iso, source) do
-    with {:ok, _pos, %{syntax_rule: rule_caps}} <- Ichor.EBNF.ISO.parse(source) do
+    with {:ok, _pos, raw_captures} <- Ichor.EBNF.ISO.parse(source) do
       names =
-        rule_caps
+        raw_captures
+        |> Keyword.get(:syntax_rule, [])
         |> List.wrap()
-        |> Enum.map(fn {:rule, :syntax_rule,
-                        %{
-                          meta_identifier:
-                            {:rule, :meta_identifier, %{IDENT: {:token, :IDENT, text}}}
-                        }} ->
+        |> Enum.map(fn {:rule, :syntax_rule, caps} ->
+          {:rule, :meta_identifier, mi_caps} = Keyword.fetch!(caps, :meta_identifier)
+          {:token, :IDENT, text} = Keyword.fetch!(mi_caps, :IDENT)
           text |> String.trim() |> String.to_atom()
         end)
 
       {:ok, names}
-    else
-      {:ok, _pos, _captures_without_rule} -> {:ok, []}
-      error -> error
     end
   end
 
   defp rule_order(:peg, source) do
-    with {:ok, _pos, %{rule: rule_caps}} <- Ichor.PEG.parse(source) do
+    with {:ok, _pos, raw_captures} <- Ichor.PEG.parse(source) do
       names =
-        rule_caps
+        raw_captures
+        |> Keyword.get(:rule, [])
         |> List.wrap()
-        |> Enum.map(fn {:rule, :rule, %{IDENT: {:token, :IDENT, text}}} ->
+        |> Enum.map(fn {:rule, :rule, caps} ->
+          {:token, :IDENT, text} = Keyword.fetch!(caps, :IDENT)
           String.to_atom(text)
         end)
 
       {:ok, names}
-    else
-      {:ok, _pos, _captures_without_rule} -> {:ok, []}
-      error -> error
     end
   end
 
