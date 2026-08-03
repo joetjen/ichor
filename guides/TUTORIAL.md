@@ -366,7 +366,7 @@ Ichor`, it genuinely can be `only: :dev, runtime: false`:
 def deps do
   [
     {:ichor_runtime, "~> 0.2"},
-    {:ichor, "~> 0.2.0", only: :dev, runtime: false}
+    {:ichor, "~> 0.2", only: :dev, runtime: false}
   ]
 end
 ```
