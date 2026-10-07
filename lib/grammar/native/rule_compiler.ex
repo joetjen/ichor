@@ -13,7 +13,7 @@ defmodule Grammar.Native.RuleCompiler do
   `raw_captures` is exactly the ordered-list shape `Ichor.Actions`
   expects (`{:token, name, text}` / `{:rule, name, sub_captures}` /
   `{:text, text}` values, keyed by name, in first-occurrence RHS
-  order -- see `Ichor.Capture.raw_captures/0`). `context` is read-only,
+  order -- see `t:Ichor.Capture.raw_captures/0`). `context` is read-only,
   threaded through purely so a
   `Grammar.IR.Custom` `@native(...)` leaf can hand it to
   `c:Ichor.CustomRule.match/4` -- nothing else in this module ever reads
