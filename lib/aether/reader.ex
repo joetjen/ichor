@@ -632,10 +632,22 @@ defmodule Aether.Reader do
   end
 
   # term := (lower_ident COLON)? postfix
+  #
+  # A capture is rule-only: a token matches as one piece of text, and
+  # nothing downstream of the lexer has anywhere to put a part of it --
+  # left unchecked here, `Grammar.VM` crashed on the first match instead.
   defp parse_term(state, context) do
     case peek(state) do
-      %Token{type: :lower_ident, value: name} ->
+      %Token{type: :lower_ident, value: name} = tok ->
         case peek_at(state, 1) do
+          %Token{type: :colon} when context == :token ->
+            {:error,
+             err(
+               state,
+               tok,
+               "captures are only valid in rule bodies -- a token matches as one piece of text, so #{name}: has nothing to capture"
+             )}
+
           %Token{type: :colon} ->
             state = state |> advance() |> advance()
 

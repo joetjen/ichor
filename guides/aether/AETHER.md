@@ -91,6 +91,10 @@ primary     := STRING | CHAR_CLASS | REGEX | "." | UPPER_IDENT | lower_ident
              | "(" choice ")" | "@indent(" choice ")" | "@samecol(" choice ")"
 ```
 
+This is the shape, not the letter: [Aether in Aether](AETHER_GRAMMAR.md)
+states the whole syntax — header, pragmas and every token — as a
+grammar that is tested against `Aether.Reader`.
+
 | Operator            | Meaning                                                         |
 |----------------------|-----------------------------------------------------------------|
 | `a b`                | sequence -- `a` then `b`                                        |
@@ -103,7 +107,7 @@ primary     := STRING | CHAR_CLASS | REGEX | "." | UPPER_IDENT | lower_ident
 | `a{3,7}`             | between 3 and 7                                                 |
 | `&a`                 | positive lookahead -- consumes nothing                          |
 | `!a`                 | negative lookahead -- consumes nothing                          |
-| `name:a`             | named capture                                                   |
+| `name:a`             | named capture (rule bodies only)                                |
 | `~a`                 | suppress `@skip` splicing before this term (rule bodies only)   |
 | `( a )`              | grouping                                                        |
 | `.`                  | any single character (tokens only)                              |
@@ -255,6 +259,9 @@ pair     := SCALAR COLON (inline_value | NEWLINE @indent(block_value))
 ```
 
 ## Named captures
+
+Captures belong in rule bodies only: a token matches as one piece of
+text, and `Aether.Reader` rejects a `name:` inside a token body.
 
 `name:expr` captures `expr`'s matched value under `name`, available to
 an `Ichor.Actions` module as `captures.name` (as a
