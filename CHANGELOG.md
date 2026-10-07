@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.1] - 2026-10-07
 
 ### Added
 
@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   description, and `test/aether/grammar_doc_test.exs` keeps it honest by
   compiling the guide's grammar and checking it accepts exactly what
   `Aether.Reader` accepts, across every `.aether` file in the repository.
+- **Guides for the two Mix tasks**, `guides/mix_tasks/ICHOR_GEN.md` and
+  `ICHOR_TOKENS.md`, in a "Mix Tasks" group of their own in the docs.
+- **The package links its GitHub Pages documentation** beside the
+  repository.
 
 ### Fixed
 
@@ -21,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capture's name: "captures are only valid in rule bodies". It used to be
   accepted, after which `Grammar.VM` crashed with a `FunctionClauseError`
   on the first match. Captures were always documented as rule-only.
+- **References to types in the docs resolve.** They were written as if
+  they named functions, and ExDoc warned that no such function exists;
+  they carry the `t:` prefix now.
+
+### Changed
+
+- **`mix.lock` is no longer checked in**, as befits a library: it only
+  ever pinned what this repository's own CI resolved, never what a user
+  gets. CI runs Elixir 1.19.5.
 
 ## [0.3.0] - 2026-08-03
 
