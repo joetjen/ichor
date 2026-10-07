@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`guides/aether/AETHER_GRAMMAR.md`: Aether's own syntax, written as an
+  Aether grammar.** `Aether.Reader` stays hand-written; the guide is a
+  description, and `test/aether/grammar_doc_test.exs` keeps it honest by
+  compiling the guide's grammar and checking it accepts exactly what
+  `Aether.Reader` accepts, across every `.aether` file in the repository.
+
+### Fixed
+
+- **A `name:` capture inside a token body is now a reader error** at the
+  capture's name: "captures are only valid in rule bodies". It used to be
+  accepted, after which `Grammar.VM` crashed with a `FunctionClauseError`
+  on the first match. Captures were always documented as rule-only.
+
 ## [0.3.0] - 2026-08-03
 
 ### Changed

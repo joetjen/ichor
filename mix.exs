@@ -120,6 +120,7 @@ defmodule Ichor.MixProject do
       "guides/mix_tasks/ICHOR_TOKENS.md",
       "guides/aether/TUTORIAL.md",
       "guides/aether/AETHER.md",
+      "guides/aether/AETHER_GRAMMAR.md",
       "guides/aether/AETHER_EXAMPLES.md",
       "guides/aether/AETHER_CHEATSHEET.md",
       "CHANGELOG.md",
