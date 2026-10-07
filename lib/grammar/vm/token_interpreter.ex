@@ -13,8 +13,8 @@ defmodule Grammar.VM.TokenInterpreter do
   `Ichor.Actions.eval_all/2` evaluate sibling captures in true source
   order instead of trusting a plain map's own (cross-OTP-version-
   unstable) iteration order; `merge_capture/3` mirrors
-  `Grammar.Native.Runtime.Parser.merge_one/3` (from `ichor_runtime`)
-  exactly, for parity with the native backend.
+  `Grammar.Native.Runtime.Parser`'s private `merge_one/3` (from
+  `ichor_runtime`) exactly, for parity with the native backend.
 
   Structurally the same backtracking discipline as
   `Grammar.VM.CharInterpreter` (including snapshotting the call stack in
