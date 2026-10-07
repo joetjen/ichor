@@ -2,6 +2,7 @@
 
 [![Hex.pm](https://img.shields.io/hexpm/v/ichor.svg)](https://hex.pm/packages/ichor)
 [![Documentation](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/ichor)
+[![GitHub](https://img.shields.io/badge/github-joetjen%2Fichor-blue.svg)](https://github.com/joetjen/ichor)
 
 Ichor compiles grammar definitions into working language implementations.
 Write a grammar once — in Aether (Ichor's own grammar language) or import

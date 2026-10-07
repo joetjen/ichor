@@ -175,6 +175,32 @@ defmodule Aether.ReaderTest do
       assert error.message =~ "may only reference other tokens"
     end
 
+    test "a capture inside a token body is rejected, at the capture's name" do
+      error =
+        fails(~S"""
+        @grammar "t"
+        @root r
+        FOO := x:"a"
+        r := FOO
+        """)
+
+      assert error.message =~ "captures are only valid in rule bodies"
+      assert {error.line, error.column} == {3, 8}
+    end
+
+    test "a capture nested inside a token body's group is rejected too" do
+      error =
+        fails(~S"""
+        @grammar "t"
+        @root r
+        FOO := "a" ("b" | sign:("+" | "-"))*
+        r := FOO
+        """)
+
+      assert error.message =~ "captures are only valid in rule bodies"
+      assert {error.line, error.column} == {3, 19}
+    end
+
     test "a redeclared predefined token name is NOT rejected here -- Eval owns that check" do
       grammar =
         ok!(~S"""

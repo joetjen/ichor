@@ -1,7 +1,7 @@
 defmodule Ichor.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.3.1"
 
   # `mix precommit` includes `test` as a step; without this, Mix runs
   # the whole alias chain (including `mix test`) in :dev, and `mix test`
@@ -91,7 +91,10 @@ defmodule Ichor.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/joetjen/ichor"},
+      links: %{
+        "GitHub" => "https://github.com/joetjen/ichor",
+        "GitHub Pages" => "https://joetjen.github.io/ichor/"
+      },
       files: ~w(lib priv/grammar .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
@@ -113,8 +116,11 @@ defmodule Ichor.MixProject do
       "guides/TUTORIAL.md",
       "guides/EXAMPLES.md",
       "guides/CHEATSHEET.md",
+      "guides/mix_tasks/ICHOR_GEN.md",
+      "guides/mix_tasks/ICHOR_TOKENS.md",
       "guides/aether/TUTORIAL.md",
       "guides/aether/AETHER.md",
+      "guides/aether/AETHER_GRAMMAR.md",
       "guides/aether/AETHER_EXAMPLES.md",
       "guides/aether/AETHER_CHEATSHEET.md",
       "CHANGELOG.md",
@@ -125,6 +131,7 @@ defmodule Ichor.MixProject do
 
   defp groups_for_extras do
     [
+      "Mix Tasks": Path.wildcard("guides/mix_tasks/*.md"),
       Aether: Path.wildcard("guides/aether/*.md")
     ]
   end

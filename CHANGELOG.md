@@ -5,17 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-10-07
+
+### Added
+
+- **`guides/aether/AETHER_GRAMMAR.md`: Aether's own syntax, written as an
+  Aether grammar.** `Aether.Reader` stays hand-written; the guide is a
+  description, and `test/aether/grammar_doc_test.exs` keeps it honest by
+  compiling the guide's grammar and checking it accepts exactly what
+  `Aether.Reader` accepts, across every `.aether` file in the repository.
+- **Guides for the two Mix tasks**, `guides/mix_tasks/ICHOR_GEN.md` and
+  `ICHOR_TOKENS.md`, in a "Mix Tasks" group of their own in the docs.
+- **The package links its GitHub Pages documentation** beside the
+  repository.
+
+### Fixed
+
+- **A `name:` capture inside a token body is now a reader error** at the
+  capture's name: "captures are only valid in rule bodies". It used to be
+  accepted, after which `Grammar.VM` crashed with a `FunctionClauseError`
+  on the first match. Captures were always documented as rule-only.
+- **References to types in the docs resolve.** They were written as if
+  they named functions, and ExDoc warned that no such function exists;
+  they carry the `t:` prefix now.
+
+### Changed
+
+- **`mix.lock` is no longer checked in**, as befits a library: it only
+  ever pinned what this repository's own CI resolved, never what a user
+  gets. CI runs Elixir 1.19.5.
+
 ## [0.3.0] - 2026-08-03
 
 ### Changed
 
 - **Breaking:** bumped `ichor_runtime` to `~> 0.2` (from `~> 0.1.0`), whose
-  0.2.0 changed raw capture data (`Ichor.Capture.node_t/0`'s `:rule`
+  0.2.0 changed raw capture data (`t:Ichor.Capture.node_t/0`'s `:rule`
   variant, and therefore every `parse/1`-style bare-recognizer function
   `use Ichor`/`Grammar.Native`/`Grammar.Native.LR`/`Grammar.Native.GLR`/
   `Grammar.LR`/`Grammar.GLR`/`Grammar.VM` generate or expose) from a
   plain `%{name => value}` map to an ordered `[{name, value}]` list
-  (`Ichor.Capture.raw_captures/0`), fixing sibling-capture evaluation
+  (`t:Ichor.Capture.raw_captures/0`), fixing sibling-capture evaluation
   order depending on a plain map's own (cross-OTP-version-unstable)
   iteration order instead of true first-occurrence source order. Ported
   the same fix to `Grammar.VM.TokenInterpreter` (this project's own
@@ -27,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `raw_captures`/`node_t()` values directly (e.g. for macro-expansion
   via `Ichor.Actions.evaluate_node/3`) needs the same `%{name: value}`
   -> `[{name, value}]`/`[name: value]` update -- the already-*evaluated*
-  `Ichor.Actions.captures/0` map handed to `handle_rule/3` callbacks is
+  `t:Ichor.Actions.captures/0` map handed to `handle_rule/3` callbacks is
   unchanged.
 
 ## [0.2.1] - 2026-07-29
