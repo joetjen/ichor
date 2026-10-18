@@ -56,10 +56,10 @@ defmodule Mix.Tasks.Ichor.Gen do
   -- there's no automatic staleness check between the checked-in file
   and its source grammar.
 
-  ## Grammar styles: Aether, ABNF, BNF, ISO EBNF, PEG
+  ## Grammar styles: Aether, ABNF, BNF, ISO EBNF, W3C EBNF, PEG
 
   `PATH_TO_GRAMMAR` doesn't have to be `.aether` source -- ABNF, BNF,
-  ISO EBNF, and PEG grammars work too, via `Ichor.GrammarImport`. The
+  ISO EBNF, W3C EBNF and PEG grammars work too, via `Ichor.GrammarImport`. The
   style is picked automatically from the file extension:
 
   | Extension | Style |
@@ -67,12 +67,13 @@ defmodule Mix.Tasks.Ichor.Gen do
   | `.aether` (or anything unrecognized) | Aether (default) |
   | `.abnf` | ABNF (RFC 5234 + RFC 7405) |
   | `.bnf` | Classical BNF |
-  | `.ebnf` | ISO EBNF (ISO/IEC 14977) |
+  | `.ebnf`, `.iso.ebnf` | ISO EBNF (ISO/IEC 14977) |
+  | `.w3c.ebnf` | W3C EBNF (the XML 1.0 notation) |
   | `.peg` | PEG (Ford/pest/PEG.js convention) |
 
   Override the detected style with an `@style` line anywhere in the
-  source (`@style abnf`, `@style bnf`, `@style ebnf`, `@style peg`, or
-  `@style aether`) -- it's stripped before the source reaches whichever
+  source (`@style abnf`, `@style bnf`, `@style ebnf` or `@style ebnf-iso`,
+  `@style ebnf-w3c`, `@style peg`, or `@style aether`) -- it's stripped before the source reaches whichever
   parser actually runs, so it doesn't need to be valid syntax in the
   target format at all.
 

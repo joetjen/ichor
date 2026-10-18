@@ -99,7 +99,8 @@ picked automatically from the file extension:
 | `.aether` (or anything unrecognized) | Aether (default) |
 | `.abnf` | ABNF (RFC 5234 + RFC 7405) |
 | `.bnf` | Classical BNF |
-| `.ebnf` | ISO EBNF (ISO/IEC 14977) |
+| `.ebnf`, `.iso.ebnf` | ISO EBNF (ISO/IEC 14977) |
+| `.w3c.ebnf` | W3C EBNF (the XML 1.0 notation) |
 | `.peg` | PEG (Ford/pest/PEG.js convention) |
 
 ```sh

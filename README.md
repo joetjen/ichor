@@ -182,7 +182,7 @@ heredocs, string interpolation).
   parser (see [Three ways to run a grammar](#three-ways-to-run-a-grammar)
   above): runs the same parse/analyze/codegen pipeline as `use Ichor`
   ahead of time, writing the result to a plain `.ex` file instead of
-  splicing it into a macro expansion. Also accepts ABNF/BNF/ISO EBNF/PEG
+  splicing it into a macro expansion. Also accepts ABNF/BNF/ISO EBNF/W3C EBNF/PEG
   source directly (style picked from the file extension or an `@style`
   pragma), for reusing an existing non-Aether grammar without
   hand-translating it first.

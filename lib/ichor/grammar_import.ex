@@ -1,7 +1,7 @@
 defmodule Ichor.GrammarImport do
   @moduledoc """
-  Turns an ABNF/BNF/ISO-EBNF/PEG ruleset (as `Ichor.ABNF`/`Ichor.BNF`/
-  `Ichor.EBNF.ISO`/`Ichor.PEG` produce them -- `%{rule_name_atom =>
+  Turns an ABNF/BNF/ISO-EBNF/W3C-EBNF/PEG ruleset (as `Ichor.ABNF`/
+  `Ichor.BNF`/`Ichor.EBNF.ISO`/`Ichor.EBNF.W3C`/`Ichor.PEG` produce them -- `%{rule_name_atom =>
   Grammar.IR.expr()}`, explicitly documented as "not a runnable
   `Aether.Grammar`") into one that actually is: picks a root (the
   source's own first-declared rule, unless overridden), assembles a
@@ -30,12 +30,13 @@ defmodule Ichor.GrammarImport do
 
   alias Grammar.IR
 
-  @type style :: :abnf | :bnf | :ebnf_iso | :peg
+  @type style :: :abnf | :bnf | :ebnf_iso | :ebnf_w3c | :peg
 
   @style_modules %{
     abnf: Ichor.ABNF,
     bnf: Ichor.BNF,
     ebnf_iso: Ichor.EBNF.ISO,
+    ebnf_w3c: Ichor.EBNF.W3C,
     peg: Ichor.PEG
   }
 
@@ -56,8 +57,14 @@ defmodule Ichor.GrammarImport do
     "abnf" => :abnf,
     "bnf" => :bnf,
     "ebnf" => :ebnf_iso,
+    "ebnf-iso" => :ebnf_iso,
+    "ebnf-w3c" => :ebnf_w3c,
     "peg" => :peg
   }
+
+  # Both EBNFs are `.ebnf`, so the notation before it says which; a
+  # plain `.ebnf` stays ISO, as it always was.
+  @style_by_double_extension %{".iso.ebnf" => :ebnf_iso, ".w3c.ebnf" => :ebnf_w3c}
 
   @style_pragma ~r/^[ \t]*@style[ \t]+(\S+)[ \t]*\r?\n?/m
 
@@ -68,8 +75,8 @@ defmodule Ichor.GrammarImport do
   **An `@style` line wins over the extension** (`@style abnf`, `bnf`,
   `ebnf`, `peg` or `aether`), and is taken out of the source, since it
   is valid syntax in none of them. Without one, the extension says:
-  `.abnf`, `.bnf`, `.ebnf` (ISO), `.peg`, and Aether for `.aether` or
-  anything else.
+  `.abnf`, `.bnf`, `.ebnf` or `.iso.ebnf` (ISO), `.w3c.ebnf` (W3C),
+  `.peg`, and Aether for `.aether` or anything else.
 
   One definition for every reader of a grammar file -- `mix ichor.gen`
   and the Ichor Conformance Suite's adapter alike -- so the two can
@@ -98,7 +105,7 @@ defmodule Ichor.GrammarImport do
         end
 
       nil ->
-        {:ok, Map.get(@style_by_extension, Path.extname(path), :aether), source}
+        {:ok, style_of_path(path), source}
     end
   end
 
@@ -259,6 +266,16 @@ defmodule Ichor.GrammarImport do
   # order (or, with exactly one occurrence, as a bare node --
   # `List.wrap/1` handles both uniformly).
 
+  defp style_of_path(path) do
+    double =
+      Enum.find(@style_by_double_extension, fn {ext, _} -> String.ends_with?(path, ext) end)
+
+    case double do
+      {_ext, style} -> style
+      nil -> Map.get(@style_by_extension, Path.extname(path), :aether)
+    end
+  end
+
   defp rule_order(:abnf, source) do
     with {:ok, _pos, raw_captures} <- Ichor.ABNF.parse(source) do
       names =
@@ -300,6 +317,21 @@ defmodule Ichor.GrammarImport do
           {:rule, :meta_identifier, mi_caps} = Keyword.fetch!(caps, :meta_identifier)
           {:token, :IDENT, text} = Keyword.fetch!(mi_caps, :IDENT)
           text |> String.trim() |> String.to_atom()
+        end)
+
+      {:ok, names}
+    end
+  end
+
+  defp rule_order(:ebnf_w3c, source) do
+    with {:ok, _pos, raw_captures} <- Ichor.EBNF.W3C.parse(source) do
+      names =
+        raw_captures
+        |> Keyword.get(:rule, [])
+        |> List.wrap()
+        |> Enum.map(fn {:rule, :rule, caps} ->
+          {:token, :IDENT, text} = Keyword.fetch!(caps, :IDENT)
+          String.to_atom(text)
         end)
 
       {:ok, names}

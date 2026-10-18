@@ -384,7 +384,7 @@ source grammar, so it's worth wiring into a `mix.exs` alias of your own
 by hand each time.
 
 `calculator.aether` doesn't have to be Aether source, either —
-`mix ichor.gen` also accepts ABNF, BNF, ISO EBNF, and PEG grammars,
+`mix ichor.gen` also accepts ABNF, BNF, ISO EBNF, W3C EBNF and PEG grammars,
 picking the style from the file's extension (`.abnf`, `.bnf`, `.ebnf`,
 `.peg`) or an explicit `@style abnf` line in the source. This is meant
 for reusing a grammar someone else already wrote in one of those

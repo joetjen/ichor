@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is what shows the two agree. A case's grammar may be written in
   any notation Ichor reads -- Aether, ABNF, BNF, ISO EBNF, PEG -- told by
   its extension or an `@style` line.
+- **W3C EBNF can be imported** (`:ebnf_w3c`), as the other four
+  notations always could: `Ichor.EBNF.W3C` read it but
+  `Ichor.GrammarImport` did not offer it, which the Praxis port already
+  called an oversight. A file says which EBNF it is by `.w3c.ebnf` or
+  `.iso.ebnf`, or `@style ebnf-w3c` / `@style ebnf-iso`; a plain `.ebnf`
+  is ISO, as before.
 - **`Ichor.GrammarImport.styled/2`**: which notation a grammar file is
   written in, by its `@style` line or its extension, and the source to
   hand that notation's reader. `mix ichor.gen` and the conformance
