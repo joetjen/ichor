@@ -28,6 +28,12 @@ defmodule Ichor.Conformance do
   and runs that. The suite configures each as an implementation of its
   own, which is what checks that the two agree.
 
+  A `"render"` answers `"rendered"`, the first error exactly as
+  `Ichor.Error.format/1` writes it for a person -- location, message,
+  the source line and a caret -- or `"tree"` when the text parses.
+  Word for word: what a person reading an error is given is output, and
+  every implementation gives the same.
+
   A `"tokens"` answers `"tokens"`, the grammar's token stream for the
   text -- every token in order, trivia included, `@keywords` applied, as
   `{name, text, line, column}`, an inline literal's token named nil --
@@ -86,6 +92,24 @@ defmodule Ichor.Conformance do
         %{"tree" => encode(tree(value))}
       else
         {:error, error} -> %{"error" => encode(failure(error))}
+      end
+
+    {Map.put(outcome, "id", id), parsers}
+  end
+
+  defp result(
+         %{"id" => id, "operation" => "render", "grammar" => path, "text" => text},
+         backend,
+         parsers
+       ) do
+    {parser, parsers} = parser(path, backend, parsers)
+
+    outcome =
+      with {:ok, made} <- parser,
+           {:ok, value} <- made.run.(text) do
+        %{"tree" => encode(tree(value))}
+      else
+        {:error, error} -> %{"rendered" => error |> List.wrap() |> hd() |> Ichor.Error.format()}
       end
 
     {Map.put(outcome, "id", id), parsers}

@@ -190,6 +190,31 @@ defmodule Ichor.ConformanceTest do
     end
   end
 
+  defp render_case(id, grammar, text),
+    do: %{"id" => id, "operation" => "render", "grammar" => grammar, "text" => text}
+
+  for backend <- [:interpreted, :compiled] do
+    test "#{backend}: render answers the first error as Ichor.Error.format/1 writes it",
+         %{tmp_dir: dir} do
+      path = grammar(dir, "calculator.aether", @calculator)
+
+      assert answer(unquote(backend), [render_case("a", path, "2 +")]) == [
+               %{
+                 "id" => "a",
+                 "rendered" =>
+                   "1:3: unexpected \"+\" -- did not expect more input here\n1 | 2 +\n  |   ^"
+               }
+             ]
+    end
+
+    test "#{backend}: render answers an input that parses with its tree", %{tmp_dir: dir} do
+      path = grammar(dir, "calculator.aether", @calculator)
+
+      assert [%{"id" => "a", "tree" => _}] =
+               answer(unquote(backend), [render_case("a", path, "2")])
+    end
+  end
+
   test "the two backends agree on a nested tree", %{tmp_dir: dir} do
     path = grammar(dir, "calculator.aether", @calculator)
     cases = [parse("a", path, "(1 + 2) * 3 - 4")]
