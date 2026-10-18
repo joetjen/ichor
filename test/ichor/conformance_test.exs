@@ -215,6 +215,109 @@ defmodule Ichor.ConformanceTest do
     end
   end
 
+  describe "the toolkits" do
+    # Typed JSON for the few shapes these cases need.
+    defp kw(name), do: %{"keyword" => name}
+    defp int(n), do: %{"integer" => Integer.to_string(n)}
+    defp tup(items), do: %{"tuple" => items}
+    defp map_of(pairs), do: %{"map" => pairs}
+    defp var(name), do: tup([kw("var"), name])
+    defp term(f, args), do: tup([kw("term"), f, args])
+
+    defp toolkit(operation, fields),
+      do: answer(:interpreted, [Map.merge(%{"id" => "a", "operation" => operation}, fields)])
+
+    test "pratt answers precedence, associativity and every fixity as a tree", %{tmp_dir: _} do
+      operators =
+        map_of([
+          ["-", map_of([[kw("prefix"), int(9)], [kw("infix"), [int(5), kw("left")]]])],
+          ["^", map_of([[kw("infix"), [int(7), kw("right")]]])],
+          ["!", map_of([[kw("postfix"), int(8)]])]
+        ])
+
+      assert [%{"tree" => tree}] =
+               toolkit("pratt", %{
+                 "operators" => operators,
+                 "tokens" => ["-", "1", "-", "2", "!", "^", "3"]
+               })
+
+      assert tree ==
+               tup([
+                 kw("infix"),
+                 "-",
+                 tup([kw("prefix"), "-", "1"]),
+                 tup([kw("infix"), "^", tup([kw("postfix"), "!", "2"]), "3"])
+               ])
+    end
+
+    test "pratt answers what it could not read as an error", %{tmp_dir: _} do
+      operators = map_of([["+", map_of([[kw("infix"), [int(5), kw("left")]]])]])
+
+      assert [%{"error" => tup([kw("left-over"), int(1)])}] ==
+               toolkit("pratt", %{"operators" => operators, "tokens" => ["1", "2"]})
+               |> Enum.map(&Map.delete(&1, "id"))
+
+      assert [%{"error" => kw("fail")}] ==
+               toolkit("pratt", %{"operators" => operators, "tokens" => ["+"]})
+               |> Enum.map(&Map.delete(&1, "id"))
+    end
+
+    test "unify answers the bindings it made, or fail", %{tmp_dir: _} do
+      assert [%{"result" => %{"map" => pairs}}] =
+               toolkit("unify", %{
+                 "left" => term("f", [var("X"), "b"]),
+                 "right" => term("f", ["a", var("Y")]),
+                 "occurs-check" => false
+               })
+
+      assert Enum.sort(pairs) == Enum.sort([["X", "a"], ["Y", "b"]])
+
+      assert [%{"result" => kw("fail")}] ==
+               toolkit("unify", %{"left" => "a", "right" => "b", "occurs-check" => false})
+               |> Enum.map(&Map.delete(&1, "id"))
+    end
+
+    test "unify with the occurs check refuses a variable inside itself", %{tmp_dir: _} do
+      fields = %{"left" => var("X"), "right" => term("f", [var("X")])}
+
+      assert [%{"result" => kw("fail")}] ==
+               toolkit("unify", Map.put(fields, "occurs-check", true))
+               |> Enum.map(&Map.delete(&1, "id"))
+
+      assert [%{"result" => %{"map" => [_]}}] =
+               toolkit("unify", Map.put(fields, "occurs-check", false))
+               |> Enum.map(&Map.delete(&1, "id"))
+    end
+
+    test "solve answers every solution, in order, and once keeps the first", %{tmp_dir: _} do
+      either =
+        tup([kw("or"), tup([kw("unify"), var("X"), "a"]), tup([kw("unify"), var("X"), "b"])])
+
+      assert [%{"solutions" => [%{"map" => [["X", "a"]]}, %{"map" => [["X", "b"]]}]}] =
+               toolkit("solve", %{"goal" => either}) |> Enum.map(&Map.delete(&1, "id"))
+
+      assert [%{"solutions" => [%{"map" => [["X", "a"]]}]}] =
+               toolkit("solve", %{"goal" => tup([kw("once"), either])})
+               |> Enum.map(&Map.delete(&1, "id"))
+    end
+
+    test "walk visits a node before its children, and renames functors", %{tmp_dir: _} do
+      t = term("f", [term("g", ["a"]), "b"])
+
+      assert [%{"result" => [^t, %{"tuple" => _}, "a", "b"]}] =
+               toolkit("walk", %{"term" => t, "walk" => kw("visit")})
+               |> Enum.map(&Map.delete(&1, "id"))
+
+      rename = tup([kw("rename"), map_of([["g", "h"]])])
+
+      assert [%{"result" => renamed}] =
+               toolkit("walk", %{"term" => t, "walk" => rename})
+               |> Enum.map(&Map.delete(&1, "id"))
+
+      assert renamed == term("f", [term("h", ["a"]), "b"])
+    end
+  end
+
   test "the two backends agree on a nested tree", %{tmp_dir: dir} do
     path = grammar(dir, "calculator.aether", @calculator)
     cases = [parse("a", path, "(1 + 2) * 3 - 4")]

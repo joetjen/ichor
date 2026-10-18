@@ -34,6 +34,10 @@ defmodule Ichor.Conformance do
   Word for word: what a person reading an error is given is output, and
   every implementation gives the same.
 
+  `"pratt"`, `"unify"`, `"solve"` and `"walk"` hold the toolkits to
+  their cases, through the same standard callbacks every adapter
+  supplies (`Ichor.Conformance.Toolkits`).
+
   A `"tokens"` answers `"tokens"`, the grammar's token stream for the
   text -- every token in order, trivia included, `@keywords` applied, as
   `{name, text, line, column}`, an inline literal's token named nil --
@@ -133,6 +137,21 @@ defmodule Ichor.Conformance do
     {Map.put(outcome, "id", id), parsers}
   end
 
+  # The toolkit cases: no grammar, so no backend -- each answers the
+  # same through either -- and their inputs are data, decoded from the
+  # suite's typed JSON (`Ichor.Conformance.Toolkits`).
+  defp result(%{"id" => id, "operation" => operation} = case, _backend, parsers)
+       when operation in ["pratt", "unify", "solve", "walk"] do
+    inputs = case |> Map.drop(["id", "operation"]) |> Map.new(fn {k, v} -> {k, decode(v)} end)
+
+    outcome =
+      operation
+      |> Ichor.Conformance.Toolkits.outcome(inputs)
+      |> Map.new(fn {k, v} -> {k, encode(v)} end)
+
+    {Map.put(outcome, "id", id), parsers}
+  end
+
   defp result(%{"id" => id, "operation" => operation}, _backend, parsers),
     do: {%{"id" => id, "error" => "unsupported operation #{inspect(operation)}"}, parsers}
 
@@ -211,6 +230,16 @@ defmodule Ichor.Conformance do
 
   defp failure(%Ichor.Error{stage: stage, line: line, column: column}),
     do: %{stage: stage, line: line, column: column}
+
+  # The suite's typed JSON, from `assize`'s EXAMPLES.md. A keyword
+  # becomes an atom: the request is the suite's own, never a stranger's.
+  defp decode(v) when is_nil(v) or is_boolean(v) or is_binary(v), do: v
+  defp decode(list) when is_list(list), do: Enum.map(list, &decode/1)
+  defp decode(%{"integer" => text}), do: String.to_integer(text)
+  defp decode(%{"float" => text}), do: text |> Float.parse() |> elem(0)
+  defp decode(%{"keyword" => name}), do: String.to_atom(name)
+  defp decode(%{"tuple" => items}), do: items |> Enum.map(&decode/1) |> List.to_tuple()
+  defp decode(%{"map" => pairs}), do: Map.new(pairs, fn [k, v] -> {decode(k), decode(v)} end)
 
   # The suite's typed JSON, from `assize`'s EXAMPLES.md.
   defp encode(v) when is_nil(v) or is_boolean(v) or is_binary(v), do: v
