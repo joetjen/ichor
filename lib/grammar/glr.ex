@@ -111,22 +111,5 @@ defmodule Grammar.GLR do
   defp placed({:error, error}, input), do: {:error, Grammar.Source.placed(error, input)}
   defp placed(matched, _input), do: matched
 
-  defp tokenize(grammar, input, context) do
-    {char_program, custom_lexemes} = Grammar.VM.CharCompiler.compile(grammar.tokens)
-    rule_program = Grammar.VM.RuleCompiler.compile(grammar)
-    lexable = Grammar.VM.lexable_token_order(grammar)
-
-    with {:ok, input} <- Grammar.Source.validate(input),
-         {:ok, raw_tokens} <-
-           Grammar.VM.Tokenizer.tokenize(
-             char_program,
-             custom_lexemes,
-             lexable,
-             rule_program,
-             context,
-             input
-           ) do
-      Grammar.Lexer.reclassify(raw_tokens, grammar.refiners)
-    end
-  end
+  defp tokenize(grammar, input, context), do: Grammar.VM.tokenize(grammar, input, context)
 end
