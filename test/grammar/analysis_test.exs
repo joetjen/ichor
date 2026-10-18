@@ -329,7 +329,42 @@ defmodule Grammar.AnalysisTest do
         r := "a" | "b"
         """)
 
-      assert %IR.Choice{} = grammar.rules[:r]
+      # Capture-less, so its body is wrapped as `text:(...)`.
+      assert %IR.Capture{name: :text, expr: %IR.Choice{}} = grammar.rules[:r]
+    end
+  end
+
+  describe "capture-less rules" do
+    test "a rule nothing in which is captured has its body captured as text" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        @noskip
+        r := "a" "b"
+        """)
+
+      assert %IR.Capture{name: :text, expr: %IR.Seq{}} = grammar.rules[:r]
+    end
+
+    test "a rule that refers to a named token or rule is left as it is" do
+      grammar =
+        ok!(~S"""
+        @grammar "t"
+        @root r
+        A := "a"
+        r := A s
+        s := (x:"q")?
+        """)
+
+      refute match?(%IR.Capture{name: :text}, grammar.rules[:r])
+      refute match?(%IR.Capture{name: :text}, grammar.rules[:s])
+    end
+
+    test "analysing twice wraps nothing twice" do
+      grammar = ok!("@grammar \"t\"\n@root r\n@noskip\nr := \"a\"\n")
+      {:ok, again} = Grammar.Analysis.run(grammar)
+      assert again.rules[:r] == grammar.rules[:r]
     end
   end
 end

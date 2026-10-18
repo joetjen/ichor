@@ -282,6 +282,15 @@ matched zero or exactly one time — never a bare value, and never a
 missing key, so pattern-matching on capture shape is reliable regardless
 of how many times something actually matched.
 
+**A rule that captures nothing captures its own text**, as `:text`: the
+input it matched, from its first token to its last, trivia between them
+included. `sign := "+" | "-"` would otherwise reach an Actions module as
+an empty map, and what was matched would be lost -- in an imported ABNF,
+BNF, EBNF or PEG grammar, which have no capture syntax, that would be
+every terminal. Whether a rule captures anything is decided by the
+grammar, not by the input: `s := (x:"q")?` captures, so where nothing
+matched it is still an empty node, never a string.
+
 ## `@engine`
 
 A grammar-wide pragma picking the parsing algorithm for `@root`:

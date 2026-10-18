@@ -159,7 +159,10 @@ An `Ichor.Actions` module implements up to three callbacks:
 
 Anything a grammar doesn't implement falls back to sensible defaults: a
 rule with exactly one meaningful capture passes that capture's value
-straight through; anything else builds an `Ichor.Node`.
+straight through; anything else builds an `Ichor.Node`. A rule that
+captures nothing at all -- `sign := "+" | "-"` -- captures the text it
+matched as `:text`, so by default it *is* that text, and a
+`handle_rule(:sign, %{text: text}, ctx)` gets it.
 
 ```elixir
 defmodule Calculator.Actions do
