@@ -4,6 +4,8 @@ defmodule Ichor.GrammarImportTest do
   alias Grammar.IR
   alias Ichor.GrammarImport
 
+  doctest Ichor.GrammarImport
+
   defmodule NoActs do
     @behaviour Ichor.Actions
   end
@@ -198,6 +200,33 @@ defmodule Ichor.GrammarImportTest do
       grammar = GrammarImport.assemble(ruleset, :a, [])
 
       assert map_size(grammar.tokens) == 1
+    end
+  end
+
+  describe "styled/2: which notation a grammar file is written in" do
+    test "is told by the file's extension" do
+      assert GrammarImport.styled("a = %x61\r\n", "g.abnf") == {:ok, :abnf, "a = %x61\r\n"}
+      assert GrammarImport.styled("<a> ::= 'a'\n", "g.bnf") == {:ok, :bnf, "<a> ::= 'a'\n"}
+      assert GrammarImport.styled("a = 'a' ;\n", "g.ebnf") == {:ok, :ebnf_iso, "a = 'a' ;\n"}
+      assert GrammarImport.styled("a <- 'a'\n", "g.peg") == {:ok, :peg, "a <- 'a'\n"}
+    end
+
+    test "is Aether for an .aether file, and for an extension it does not know" do
+      assert {:ok, :aether, _} = GrammarImport.styled("@grammar \"g\"\n", "g.aether")
+      assert {:ok, :aether, _} = GrammarImport.styled("@grammar \"g\"\n", "g.txt")
+    end
+
+    test "an @style line wins over the extension, and is taken out of the source" do
+      assert GrammarImport.styled("@style peg\na <- 'a'\n", "g.aether") ==
+               {:ok, :peg, "a <- 'a'\n"}
+    end
+
+    test "an @style it does not know is an error naming the ones it does" do
+      assert {:error, %Ichor.Error{message: message}} =
+               GrammarImport.styled("@style yacc\n", "g.y")
+
+      assert message =~ "yacc"
+      assert message =~ "abnf"
     end
   end
 end

@@ -17,7 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Ichor.generate_from_grammar/2` -- and answers every case with its
   default tree, or its error's stage, line and column, as the suite's
   typed JSON. The suite holds each backend to its cases separately,
-  which is what shows the two agree.
+  which is what shows the two agree. A case's grammar may be written in
+  any notation Ichor reads -- Aether, ABNF, BNF, ISO EBNF, PEG -- told by
+  its extension or an `@style` line.
+- **`Ichor.GrammarImport.styled/2`**: which notation a grammar file is
+  written in, by its `@style` line or its extension, and the source to
+  hand that notation's reader. `mix ichor.gen` and the conformance
+  adapter both use it, so they never disagree about what a file is.
 
 ### Fixed
 
