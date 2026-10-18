@@ -25,6 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hand that notation's reader. `mix ichor.gen` and the conformance
   adapter both use it, so they never disagree about what a file is.
 
+### Changed
+
+- **A rule that captures nothing is the text it matched.** Its body is
+  captured as `:text` -- the input from its first token to its last --
+  so its default value is that string, and an Actions module finds it in
+  `%{text: ...}`. It used to be an empty node, and what it matched was
+  lost to whatever the parse was fed to; in an imported ABNF, BNF, EBNF
+  or PEG grammar, which have no capture syntax, every terminal was.
+  Decided by the grammar, never by the input (`Grammar.Analysis`). A
+  generated parser changes when it is regenerated: its capture-less
+  rules come out as text, where they were empty nodes.
+
 ### Fixed
 
 - **Trivia around the input is skipped by every engine and both

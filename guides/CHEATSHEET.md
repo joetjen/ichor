@@ -165,6 +165,8 @@ end
 - **Default fallback for a rule**: exactly one meaningful capture passes
   its value straight through; more than one builds an `%Ichor.Node{rule:
   ..., captures: %{...}}`.
+- **A rule that captures nothing is the text it matched**: its captures
+  are `%{text: ...}`, so by default it is that string.
 - **Default fallback for a token**: the raw matched text, unchanged.
 - A capture under `*`/`+`/`{n,m}` always arrives as a **list**, even if
   it matched zero or one times — never a bare value, never a missing key.

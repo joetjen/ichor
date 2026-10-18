@@ -81,10 +81,55 @@ defmodule Grammar.Analysis do
         duplicate_alternative_errors(grammar, all_defs)
 
     case errors do
-      [] -> {:ok, split_back(grammar, all_defs)}
+      [] -> {:ok, grammar |> split_back(all_defs) |> capture_less_as_text()}
       errors -> {:error, errors}
     end
   end
+
+  # **A rule that captures nothing is the text it matched.** Its body
+  # `b` becomes `text:(b)`, and every engine and backend already
+  # captures a composite expression as the span of input it matched, so
+  # the default tree makes that the string and an actions module finds it
+  # in `%{text: ...}`. Without this, a rule built only from literals was
+  # an empty node, and what it matched was lost to whatever the parse was
+  # fed to -- in an ABNF, BNF, EBNF or PEG grammar, which have no capture
+  # syntax, every terminal was.
+  #
+  # **Decided by the grammar, not by the input**: a rule is capture-less
+  # when nothing in its body could ever be captured, so the same rule is
+  # a string for every input. `text` cannot collide with a capture of the
+  # rule's own, because it has none -- which is also why running this
+  # twice wraps nothing twice.
+  #
+  # Last, after left recursion is rewritten: that pass looks for a rule's
+  # own name at the front of its body, which a wrapper would hide.
+  defp capture_less_as_text(grammar) do
+    excluded = Grammar.VM.RuleCompiler.implicit_capture_exclusions(grammar)
+
+    rules =
+      Map.new(grammar.rules, fn {name, ir} ->
+        if captures_anything?(ir, excluded),
+          do: {name, ir},
+          else: {name, %IR.Capture{name: :text, expr: ir}}
+      end)
+
+    %{grammar | rules: rules}
+  end
+
+  defp captures_anything?(%IR.Capture{}, _excluded), do: true
+
+  defp captures_anything?(%IR.RuleRef{name: name}, excluded),
+    do: not MapSet.member?(excluded, name)
+
+  # A rule-position `@native(...)` builds captures of its own; what it
+  # answers is the callback's business.
+  defp captures_anything?(%IR.Custom{}, _excluded), do: true
+
+  defp captures_anything?(%{exprs: exprs}, excluded),
+    do: Enum.any?(exprs, &captures_anything?(&1, excluded))
+
+  defp captures_anything?(%{expr: expr}, excluded), do: captures_anything?(expr, excluded)
+  defp captures_anything?(_leaf, _excluded), do: false
 
   defp split_back(grammar, all_defs) do
     tokens = Map.new(Map.keys(grammar.tokens), &{&1, Map.fetch!(all_defs, &1)})
