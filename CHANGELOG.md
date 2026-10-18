@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Grammar.VM.tokenize/3`**: a grammar's token stream for an input,
   interpreted, for every engine -- what a generated module's own
   `tokenize/2` answers. `Grammar.LR` and `Grammar.GLR` lex through it.
+- **`mix ichor.conformance` answers `"render"`**: the first error
+  exactly as `Ichor.Error.format/1` writes it, or the tree when the text
+  parses.
 - **`mix ichor.conformance` answers `"tokens"`** as well as `"parse"`:
   the token stream, trivia included, as `{name, text, line, column}`,
   an inline literal's generated token named nil.
