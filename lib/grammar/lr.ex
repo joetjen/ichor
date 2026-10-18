@@ -104,7 +104,12 @@ defmodule Grammar.LR do
 
   defp match(%__MODULE__{table: table}, grammar, input, context) do
     with {:ok, tokens} <- tokenize(grammar, input, context) do
-      run_shift_reduce(table, List.to_tuple(tokens))
+      stream = tokens |> Grammar.Source.trimmed(grammar.skip) |> List.to_tuple()
+
+      case run_shift_reduce(table, stream) do
+        {:error, error} -> {:error, Grammar.Source.placed(error, input)}
+        matched -> matched
+      end
     end
   end
 

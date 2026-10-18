@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   typed JSON. The suite holds each backend to its cases separately,
   which is what shows the two agree.
 
+### Fixed
+
+- **Trivia around the input is skipped by every engine and both
+  backends.** `run/2` refused a leading `@skip` token that
+  `run_sequence/2` skipped, so `" 2"` parsed through one and not the
+  other, and an `@engine lr` grammar refused trailing trivia that PEG
+  and GLR accepted. The stream is now trimmed of `@skip` tokens before
+  its first other token and after its last
+  (`Grammar.Source.trimmed/2`); between two tokens they are the
+  grammar's, as before.
+- **Every parse error says where.** A root that does not match is
+  placed at the token it was tried at, and "unexpected end of input"
+  at the end of the input -- line 1, column 1 for no input at all.
+  Both used to carry no line or column.
+- Both found by the Ichor Runtime Conformance Suite. Needs
+  `ichor_runtime` 0.3.0; until it is published, `mix.exs` takes it by
+  path.
+
 ## [0.3.1] - 2026-10-07
 
 ### Added

@@ -240,7 +240,7 @@ defmodule Grammar.VM do
              input
            ),
          {:ok, tokens} <- Grammar.Lexer.reclassify(raw_tokens, grammar.refiners) do
-      stream = List.to_tuple(tokens)
+      stream = tokens |> Grammar.Source.trimmed(grammar.skip) |> List.to_tuple()
       entry = Map.fetch!(rule_program.entry_points, grammar.root)
 
       case TokenInterpreter.run(rule_program.instructions, entry, stream, context) do
@@ -251,10 +251,14 @@ defmodule Grammar.VM do
           {:error, unexpected_token_error(stream, pos, input)}
 
         :fail ->
+          {line, column} = Grammar.Source.position(stream, 0, input)
+
           {:error,
            Error.new(
              message: "input does not match #{inspect(grammar.root)}",
              stage: :parser,
+             line: line,
+             column: column,
              source: input
            )}
       end

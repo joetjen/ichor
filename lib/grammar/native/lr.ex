@@ -117,9 +117,13 @@ defmodule Grammar.Native.LR do
               {:ok, non_neg_integer(), Ichor.Capture.raw_captures()} | {:error, Ichor.Error.t()}
       def parse(input, context \\ nil) do
         with {:ok, tokens} <- tokenize(input, context) do
-          stream = List.to_tuple(tokens)
+          stream = tokens |> Grammar.Source.trimmed(unquote(grammar.skip)) |> List.to_tuple()
           initial_stack = [{unquote(start_state), 0, 0, nil}]
-          unquote(start_fn)(initial_stack, stream, 0, context)
+
+          case unquote(start_fn)(initial_stack, stream, 0, context) do
+            {:error, error} -> {:error, Grammar.Source.placed(error, input)}
+            matched -> matched
+          end
         end
       end
 
