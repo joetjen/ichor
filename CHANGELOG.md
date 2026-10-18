@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Licensed under the Apache License 2.0 (`Apache-2.0`); it was MIT.
 - **A rule that captures nothing is the text it matched.** Its body is
   captured as `:text` -- the input from its first token to its last --
   so its default value is that string, and an Actions module finds it in
