@@ -1,9 +1,9 @@
 defmodule Ichor.Conformance do
   @moduledoc """
-  This implementation's answers to the Ichor Runtime Conformance Suite,
+  This implementation's answers to the Ichor Conformance Suite,
   through either backend.
 
-  The suite runs every Ichor Runtime implementation against the same
+  The suite runs every Ichor implementation against the same
   grammars and inputs, reaching each one through an adapter
   (`mix ichor.conformance` here) with a JSON request, and reading a JSON
   answer back:

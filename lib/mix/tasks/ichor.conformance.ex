@@ -1,10 +1,10 @@
 defmodule Mix.Tasks.Ichor.Conformance do
-  @shortdoc "Answers an Ichor Runtime Conformance Suite request"
+  @shortdoc "Answers an Ichor Conformance Suite request"
 
   @moduledoc """
       $ mix ichor.conformance interpreted|compiled REQUEST ANSWER
 
-  This implementation's adapter for the Ichor Runtime Conformance
+  This implementation's adapter for the Ichor Conformance
   Suite: reads the JSON request at `REQUEST`, answers every case through
   the named backend (`Ichor.Conformance`), and writes the JSON answer to
   `ANSWER`.
