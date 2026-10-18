@@ -211,8 +211,8 @@ real runtime dependency and keep `ichor` itself dev-only:
 ```elixir
 def deps do
   [
-    {:ichor_runtime, "~> 0.2"},
-    {:ichor, "~> 0.2", only: :dev, runtime: false}
+    {:ichor_runtime, "~> 0.3"},
+    {:ichor, "~> 0.4", only: :dev, runtime: false}
   ]
 end
 ```
@@ -225,7 +225,7 @@ still expands that macro:
 ```elixir
 def deps do
   [
-    {:ichor, "~> 0.2"}
+    {:ichor, "~> 0.4"}
   ]
 end
 ```
