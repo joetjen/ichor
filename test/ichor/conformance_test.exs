@@ -120,6 +120,30 @@ defmodule Ichor.ConformanceTest do
     end
   end
 
+  # The same language -- a number, or two joined by `+` -- in each
+  # notation Ichor reads, all `@noskip` as an import always is.
+  @notations %{
+    "sum.peg" => "sum <- num ('+' num)?\nnum <- [0-9]+\n",
+    "sum.bnf" => "<sum> ::= <num> '+' <num> | <num>\n<num> ::= '1' | '2'\n",
+    "sum.ebnf" => "sum = num, ['+', num] ;\nnum = '1' | '2' ;\n",
+    "sum.abnf" => "sum = num [\"+\" num]\r\nnum = \"1\" / \"2\"\r\n"
+  }
+
+  for {name, source} <- @notations, backend <- [:interpreted, :compiled] do
+    test "#{backend}: a grammar written as #{Path.extname(name)} is read by its importer",
+         %{tmp_dir: dir} do
+      path = grammar(dir, unquote(name), unquote(source))
+
+      assert [%{"id" => "a", "tree" => _}] = answer(unquote(backend), [parse("a", path, "1+2")])
+      assert [%{"id" => "a", "error" => _}] = answer(unquote(backend), [parse("a", path, "1+")])
+    end
+  end
+
+  test "an @style line names the notation whatever the extension", %{tmp_dir: dir} do
+    path = grammar(dir, "sum.txt", "@style peg\n" <> @notations["sum.peg"])
+    assert [%{"tree" => _}] = answer(:compiled, [parse("a", path, "12")])
+  end
+
   test "the two backends agree on a nested tree", %{tmp_dir: dir} do
     path = grammar(dir, "calculator.aether", @calculator)
     cases = [parse("a", path, "(1 + 2) * 3 - 4")]

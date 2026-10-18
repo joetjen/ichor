@@ -12,6 +12,12 @@ defmodule Ichor.Conformance do
                       "grammar" => "/abs/calculator.aether", "text" => "2"}]}
       #=> %{"results" => [%{"id" => "trees: one number", "tree" => ...}]}
 
+  **A grammar may be written in any notation Ichor reads** -- Aether,
+  ABNF, BNF, ISO EBNF, PEG -- told by its extension or an `@style` line,
+  exactly as `mix ichor.gen` tells it (`Ichor.GrammarImport.styled/2`).
+  What the suite compares is the parse, so the same language written
+  twice must come to the same tree.
+
   **It lives here, not in `ichor_runtime`**, because the runtime is only
   ever called by generated code: to answer a case, a parser has to be
   made from the case's grammar first, and making one is Ichor's.
@@ -100,13 +106,18 @@ defmodule Ichor.Conformance do
   # compiled one then generates from the grammar as read, since
   # `generate_from_grammar/2` analyses it again itself.
   defp made(path, backend) do
-    source = File.read!(path)
-
-    with {:ok, grammar} <- Aether.Parser.parse(source, path),
+    with {:ok, style, source} <- Ichor.GrammarImport.styled(File.read!(path), path),
+         {:ok, grammar} <- read(style, source, path),
          {:ok, analysed} <- Grammar.Analysis.run(grammar) do
       {:ok, runner(backend, grammar, analysed)}
     end
   end
+
+  # A grammar in any notation Ichor reads, as the grammar it means:
+  # Aether by its own reader, anything else by its importer, the way
+  # `mix ichor.gen` reads one (`Ichor.GrammarImport.styled/2`).
+  defp read(:aether, source, path), do: Aether.Parser.parse(source, path)
+  defp read(style, source, _path), do: Ichor.GrammarImport.import_grammar(style, source)
 
   defp runner(:interpreted, _grammar, analysed) do
     engine =

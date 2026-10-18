@@ -43,6 +43,65 @@ defmodule Ichor.GrammarImport do
   @spec styles() :: [style()]
   def styles, do: Map.keys(@style_modules)
 
+  @style_by_extension %{
+    ".aether" => :aether,
+    ".abnf" => :abnf,
+    ".bnf" => :bnf,
+    ".ebnf" => :ebnf_iso,
+    ".peg" => :peg
+  }
+
+  @style_pragma_names %{
+    "aether" => :aether,
+    "abnf" => :abnf,
+    "bnf" => :bnf,
+    "ebnf" => :ebnf_iso,
+    "peg" => :peg
+  }
+
+  @style_pragma ~r/^[ \t]*@style[ \t]+(\S+)[ \t]*\r?\n?/m
+
+  @doc """
+  Which notation `source`, read from `path`, is written in, and the
+  source to hand that notation's reader.
+
+  **An `@style` line wins over the extension** (`@style abnf`, `bnf`,
+  `ebnf`, `peg` or `aether`), and is taken out of the source, since it
+  is valid syntax in none of them. Without one, the extension says:
+  `.abnf`, `.bnf`, `.ebnf` (ISO), `.peg`, and Aether for `.aether` or
+  anything else.
+
+  One definition for every reader of a grammar file -- `mix ichor.gen`
+  and the Ichor Conformance Suite's adapter alike -- so the two can
+  never disagree about what a file is.
+
+      iex> Ichor.GrammarImport.styled("a <- 'a'", "g.peg")
+      {:ok, :peg, "a <- 'a'"}
+  """
+  @spec styled(String.t(), Path.t()) ::
+          {:ok, style() | :aether, String.t()} | {:error, Ichor.Error.t()}
+  def styled(source, path) do
+    case Regex.run(@style_pragma, source) do
+      [match, name] ->
+        case Map.fetch(@style_pragma_names, String.downcase(name)) do
+          {:ok, style} ->
+            {:ok, style, String.replace(source, match, "", global: false)}
+
+          :error ->
+            {:error,
+             Ichor.Error.new(
+               message:
+                 "unknown @style #{inspect(name)} -- expected one of: " <>
+                   Enum.map_join(@style_pragma_names, ", ", fn {known, _style} -> known end),
+               stage: :parser
+             )}
+        end
+
+      nil ->
+        {:ok, Map.get(@style_by_extension, Path.extname(path), :aether), source}
+    end
+  end
+
   # RFC 5234 Appendix B.1's own core rules, in ABNF itself -- parsed via
   # Ichor.ABNF (already exists; no reason to hand-transcribe fifteen
   # Grammar.IR literals instead of just writing the RFC's own text and
