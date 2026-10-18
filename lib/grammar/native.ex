@@ -56,7 +56,7 @@ defmodule Grammar.Native do
               {:ok, non_neg_integer(), Ichor.Capture.raw_captures()} | {:error, Ichor.Error.t()}
       def parse(input, context \\ nil) do
         with {:ok, tokens} <- tokenize(input, context) do
-          stream = List.to_tuple(tokens)
+          stream = tokens |> Grammar.Source.trimmed(unquote(grammar.skip)) |> List.to_tuple()
 
           case unquote(root_fn)(stream, 0, [0], context) do
             {:ok, pos, _ref_stack, raw_captures} when pos == tuple_size(stream) ->
@@ -66,10 +66,14 @@ defmodule Grammar.Native do
               {:error, Parser.unexpected_token_error(stream, pos, input)}
 
             _fail ->
+              {line, column} = Grammar.Source.position(stream, 0, input)
+
               {:error,
                Ichor.Error.new(
                  message: "input does not match #{inspect(unquote(root))}",
                  stage: :parser,
+                 line: line,
+                 column: column,
                  source: input
                )}
           end

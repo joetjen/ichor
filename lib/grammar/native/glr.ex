@@ -86,16 +86,19 @@ defmodule Grammar.Native.GLR do
               {:ok, non_neg_integer(), Ichor.Capture.raw_captures()} | {:error, Ichor.Error.t()}
       def parse(input, context \\ nil) do
         with {:ok, tokens} <- tokenize(input, context) do
-          stream = List.to_tuple(tokens)
+          stream = tokens |> Grammar.Source.trimmed(unquote(grammar.skip)) |> List.to_tuple()
 
-          Runtime.run(
-            &glr_action/2,
-            &glr_goto/2,
-            unquote(productions),
-            unquote(start_state),
-            unquote(end_symbol),
-            stream
-          )
+          case Runtime.run(
+                 &glr_action/2,
+                 &glr_goto/2,
+                 unquote(productions),
+                 unquote(start_state),
+                 unquote(end_symbol),
+                 stream
+               ) do
+            {:error, error} -> {:error, Grammar.Source.placed(error, input)}
+            matched -> matched
+          end
         end
       end
 

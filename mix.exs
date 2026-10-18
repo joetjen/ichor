@@ -63,7 +63,10 @@ defmodule Ichor.MixProject do
       # ExDoc is invoked via `MIX_ENV=dev mix docs`
 
       # === RUNTIME ===
-      {:ichor_runtime, "~> 0.2"}
+      # A path until ichor_runtime 0.3.0 is published, which this needs
+      # (Grammar.Source.trimmed/2, position/3, placed/2): the release
+      # commit puts back `"~> 0.3"`.
+      {:ichor_runtime, path: "../ichor_runtime"}
     ]
   end
 
