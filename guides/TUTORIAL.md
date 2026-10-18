@@ -159,7 +159,10 @@ An `Ichor.Actions` module implements up to three callbacks:
 
 Anything a grammar doesn't implement falls back to sensible defaults: a
 rule with exactly one meaningful capture passes that capture's value
-straight through; anything else builds an `Ichor.Node`.
+straight through; anything else builds an `Ichor.Node`. A rule that
+captures nothing at all -- `sign := "+" | "-"` -- captures the text it
+matched as `:text`, so by default it *is* that text, and a
+`handle_rule(:sign, %{text: text}, ctx)` gets it.
 
 ```elixir
 defmodule Calculator.Actions do
@@ -365,8 +368,8 @@ Ichor`, it genuinely can be `only: :dev, runtime: false`:
 ```elixir
 def deps do
   [
-    {:ichor_runtime, "~> 0.2"},
-    {:ichor, "~> 0.2", only: :dev, runtime: false}
+    {:ichor_runtime, "~> 0.3"},
+    {:ichor, "~> 0.4", only: :dev, runtime: false}
   ]
 end
 ```
@@ -381,7 +384,7 @@ source grammar, so it's worth wiring into a `mix.exs` alias of your own
 by hand each time.
 
 `calculator.aether` doesn't have to be Aether source, either —
-`mix ichor.gen` also accepts ABNF, BNF, ISO EBNF, and PEG grammars,
+`mix ichor.gen` also accepts ABNF, BNF, ISO EBNF, W3C EBNF and PEG grammars,
 picking the style from the file's extension (`.abnf`, `.bnf`, `.ebnf`,
 `.peg`) or an explicit `@style abnf` line in the source. This is meant
 for reusing a grammar someone else already wrote in one of those

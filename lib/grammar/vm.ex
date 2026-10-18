@@ -103,6 +103,35 @@ defmodule Grammar.VM do
     end
   end
 
+  @doc """
+  `input`'s token stream under `grammar` -- interpreted, and for any
+  engine, since every engine lexes the same way.
+
+  What a generated module's own `tokenize/2` answers: every token in
+  order, trivia included, `@keywords`/`@refine` already applied, or the
+  lexer error where no token matches. The stream a parse runs over,
+  before the trivia around it is trimmed.
+  """
+  @spec tokenize(Aether.Grammar.t(), String.t(), Actions.context()) ::
+          {:ok, [Grammar.VM.Token.t()]} | {:error, Error.t()}
+  def tokenize(%Aether.Grammar{} = grammar, input, context \\ nil) do
+    {char_program, custom_lexemes} = CharCompiler.compile(grammar.tokens)
+    rule_program = RuleCompiler.compile(grammar)
+
+    with {:ok, input} <- Grammar.Source.validate(input),
+         {:ok, raw_tokens} <-
+           Tokenizer.tokenize(
+             char_program,
+             custom_lexemes,
+             lexable_token_order(grammar),
+             rule_program,
+             context,
+             input
+           ) do
+      Grammar.Lexer.reclassify(raw_tokens, grammar.refiners)
+    end
+  end
+
   defp do_run_sequence_toplevel(grammar, input, actions_module, initial_context) do
     capture_shapes = RuleCompiler.capture_shapes(grammar)
     {char_program, custom_lexemes} = CharCompiler.compile(grammar.tokens)
@@ -240,7 +269,7 @@ defmodule Grammar.VM do
              input
            ),
          {:ok, tokens} <- Grammar.Lexer.reclassify(raw_tokens, grammar.refiners) do
-      stream = List.to_tuple(tokens)
+      stream = tokens |> Grammar.Source.trimmed(grammar.skip) |> List.to_tuple()
       entry = Map.fetch!(rule_program.entry_points, grammar.root)
 
       case TokenInterpreter.run(rule_program.instructions, entry, stream, context) do
@@ -251,10 +280,14 @@ defmodule Grammar.VM do
           {:error, unexpected_token_error(stream, pos, input)}
 
         :fail ->
+          {line, column} = Grammar.Source.position(stream, 0, input)
+
           {:error,
            Error.new(
              message: "input does not match #{inspect(grammar.root)}",
              stage: :parser,
+             line: line,
+             column: column,
              source: input
            )}
       end

@@ -53,7 +53,8 @@ ebnf`, `@style peg`, `@style aether`):
 | `.aether` (default) | Aether |
 | `.abnf` | ABNF (RFC 5234 + RFC 7405) |
 | `.bnf` | Classical BNF |
-| `.ebnf` | ISO EBNF (ISO/IEC 14977) |
+| `.ebnf`, `.iso.ebnf` | ISO EBNF (ISO/IEC 14977) |
+| `.w3c.ebnf` | W3C EBNF (the XML 1.0 notation) |
 | `.peg` | PEG |
 
 For a non-Aether style, the entry rule is the source's own
@@ -72,8 +73,8 @@ dependency:
 ```elixir
 def deps do
   [
-    {:ichor_runtime, "~> 0.2"},
-    {:ichor, "~> 0.2", only: :dev, runtime: false}
+    {:ichor_runtime, "~> 0.3"},
+    {:ichor, "~> 0.4", only: :dev, runtime: false}
   ]
 end
 ```
@@ -165,6 +166,8 @@ end
 - **Default fallback for a rule**: exactly one meaningful capture passes
   its value straight through; more than one builds an `%Ichor.Node{rule:
   ..., captures: %{...}}`.
+- **A rule that captures nothing is the text it matched**: its captures
+  are `%{text: ...}`, so by default it is that string.
 - **Default fallback for a token**: the raw matched text, unchanged.
 - A capture under `*`/`+`/`{n,m}` always arrives as a **list**, even if
   it matched zero or one times — never a bare value, never a missing key.

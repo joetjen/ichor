@@ -104,28 +104,16 @@ defmodule Grammar.LR do
 
   defp match(%__MODULE__{table: table}, grammar, input, context) do
     with {:ok, tokens} <- tokenize(grammar, input, context) do
-      run_shift_reduce(table, List.to_tuple(tokens))
+      stream = tokens |> Grammar.Source.trimmed(grammar.skip) |> List.to_tuple()
+
+      case run_shift_reduce(table, stream) do
+        {:error, error} -> {:error, Grammar.Source.placed(error, input)}
+        matched -> matched
+      end
     end
   end
 
-  defp tokenize(grammar, input, context) do
-    {char_program, custom_lexemes} = Grammar.VM.CharCompiler.compile(grammar.tokens)
-    rule_program = Grammar.VM.RuleCompiler.compile(grammar)
-    lexable = Grammar.VM.lexable_token_order(grammar)
-
-    with {:ok, input} <- Grammar.Source.validate(input),
-         {:ok, raw_tokens} <-
-           Grammar.VM.Tokenizer.tokenize(
-             char_program,
-             custom_lexemes,
-             lexable,
-             rule_program,
-             context,
-             input
-           ) do
-      Grammar.Lexer.reclassify(raw_tokens, grammar.refiners)
-    end
-  end
+  defp tokenize(grammar, input, context), do: Grammar.VM.tokenize(grammar, input, context)
 
   defp run_shift_reduce(table, stream) do
     step(table, stream, 0, [{table.start_state, 0, 0, nil}])

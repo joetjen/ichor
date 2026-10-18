@@ -16,7 +16,7 @@ normal `~>` Hex version constraint, like any other dependency. If your
 change touches something a *generated parser calls at match/evaluation
 time*, you very likely want
 [`ichor_runtime`'s own repo](https://github.com/joetjen/ichor_runtime)
-and its own `CONTRIBUTION.md`, not this one.
+and its own `CONTRIBUTING.md`, not this one.
 
 ```sh
 git clone <this repository>
@@ -124,4 +124,4 @@ input/expected/actual triple.
 ## License
 
 By contributing, you agree that your contributions will be licensed
-under the project's [MIT license](LICENSE).
+under the project's [Apache License 2.0](LICENSE).

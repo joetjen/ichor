@@ -1,7 +1,7 @@
 defmodule Ichor.MixProject do
   use Mix.Project
 
-  @version "0.3.1"
+  @version "0.4.0"
 
   # `mix precommit` includes `test` as a step; without this, Mix runs
   # the whole alias chain (including `mix test`) in :dev, and `mix test`
@@ -63,7 +63,7 @@ defmodule Ichor.MixProject do
       # ExDoc is invoked via `MIX_ENV=dev mix docs`
 
       # === RUNTIME ===
-      {:ichor_runtime, "~> 0.2"}
+      {:ichor_runtime, "~> 0.3"}
     ]
   end
 
@@ -90,7 +90,7 @@ defmodule Ichor.MixProject do
 
   defp package do
     [
-      licenses: ["MIT"],
+      licenses: ["Apache-2.0"],
       links: %{
         "GitHub" => "https://github.com/joetjen/ichor",
         "GitHub Pages" => "https://joetjen.github.io/ichor/"
@@ -124,7 +124,7 @@ defmodule Ichor.MixProject do
       "guides/aether/AETHER_EXAMPLES.md",
       "guides/aether/AETHER_CHEATSHEET.md",
       "CHANGELOG.md",
-      "CONTRIBUTION.md",
+      "CONTRIBUTING.md",
       "LICENSE"
     ]
   end

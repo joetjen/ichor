@@ -182,7 +182,7 @@ heredocs, string interpolation).
   parser (see [Three ways to run a grammar](#three-ways-to-run-a-grammar)
   above): runs the same parse/analyze/codegen pipeline as `use Ichor`
   ahead of time, writing the result to a plain `.ex` file instead of
-  splicing it into a macro expansion. Also accepts ABNF/BNF/ISO EBNF/PEG
+  splicing it into a macro expansion. Also accepts ABNF/BNF/ISO EBNF/W3C EBNF/PEG
   source directly (style picked from the file extension or an `@style`
   pragma), for reusing an existing non-Aether grammar without
   hand-translating it first.
@@ -211,8 +211,8 @@ real runtime dependency and keep `ichor` itself dev-only:
 ```elixir
 def deps do
   [
-    {:ichor_runtime, "~> 0.2"},
-    {:ichor, "~> 0.2", only: :dev, runtime: false}
+    {:ichor_runtime, "~> 0.3"},
+    {:ichor, "~> 0.4", only: :dev, runtime: false}
   ]
 end
 ```
@@ -225,7 +225,7 @@ still expands that macro:
 ```elixir
 def deps do
   [
-    {:ichor, "~> 0.2"}
+    {:ichor, "~> 0.4"}
   ]
 end
 ```
@@ -254,9 +254,9 @@ mix compile --warnings-as-errors
 mix docs
 ```
 
-See [CONTRIBUTION.md](CONTRIBUTION.md) for how to propose changes, and
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to propose changes, and
 [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE).

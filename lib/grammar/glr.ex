@@ -96,37 +96,20 @@ defmodule Grammar.GLR do
 
   defp match(%__MODULE__{table: table}, grammar, input, context) do
     with {:ok, tokens} <- tokenize(grammar, input, context) do
-      stream = List.to_tuple(tokens)
+      stream = tokens |> Grammar.Source.trimmed(grammar.skip) |> List.to_tuple()
       action_fn = fn state, term -> table.action |> Map.get(state, %{}) |> Map.get(term, []) end
       goto_fn = fn state, nonterm -> table.goto |> Map.get(state, %{}) |> Map.get(nonterm) end
 
-      Runtime.run(
-        action_fn,
-        goto_fn,
-        table.productions,
-        table.start_state,
-        table.end_symbol,
-        stream
-      )
+      action_fn
+      |> Runtime.run(goto_fn, table.productions, table.start_state, table.end_symbol, stream)
+      |> placed(input)
     end
   end
 
-  defp tokenize(grammar, input, context) do
-    {char_program, custom_lexemes} = Grammar.VM.CharCompiler.compile(grammar.tokens)
-    rule_program = Grammar.VM.RuleCompiler.compile(grammar)
-    lexable = Grammar.VM.lexable_token_order(grammar)
+  # The runtime builds "unexpected end of input" from the stream alone;
+  # here, where the input is, it gets its line and column.
+  defp placed({:error, error}, input), do: {:error, Grammar.Source.placed(error, input)}
+  defp placed(matched, _input), do: matched
 
-    with {:ok, input} <- Grammar.Source.validate(input),
-         {:ok, raw_tokens} <-
-           Grammar.VM.Tokenizer.tokenize(
-             char_program,
-             custom_lexemes,
-             lexable,
-             rule_program,
-             context,
-             input
-           ) do
-      Grammar.Lexer.reclassify(raw_tokens, grammar.refiners)
-    end
-  end
+  defp tokenize(grammar, input, context), do: Grammar.VM.tokenize(grammar, input, context)
 end

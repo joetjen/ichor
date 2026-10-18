@@ -56,10 +56,10 @@ defmodule Mix.Tasks.Ichor.Gen do
   -- there's no automatic staleness check between the checked-in file
   and its source grammar.
 
-  ## Grammar styles: Aether, ABNF, BNF, ISO EBNF, PEG
+  ## Grammar styles: Aether, ABNF, BNF, ISO EBNF, W3C EBNF, PEG
 
   `PATH_TO_GRAMMAR` doesn't have to be `.aether` source -- ABNF, BNF,
-  ISO EBNF, and PEG grammars work too, via `Ichor.GrammarImport`. The
+  ISO EBNF, W3C EBNF and PEG grammars work too, via `Ichor.GrammarImport`. The
   style is picked automatically from the file extension:
 
   | Extension | Style |
@@ -67,12 +67,13 @@ defmodule Mix.Tasks.Ichor.Gen do
   | `.aether` (or anything unrecognized) | Aether (default) |
   | `.abnf` | ABNF (RFC 5234 + RFC 7405) |
   | `.bnf` | Classical BNF |
-  | `.ebnf` | ISO EBNF (ISO/IEC 14977) |
+  | `.ebnf`, `.iso.ebnf` | ISO EBNF (ISO/IEC 14977) |
+  | `.w3c.ebnf` | W3C EBNF (the XML 1.0 notation) |
   | `.peg` | PEG (Ford/pest/PEG.js convention) |
 
   Override the detected style with an `@style` line anywhere in the
-  source (`@style abnf`, `@style bnf`, `@style ebnf`, `@style peg`, or
-  `@style aether`) -- it's stripped before the source reaches whichever
+  source (`@style abnf`, `@style bnf`, `@style ebnf` or `@style ebnf-iso`,
+  `@style ebnf-w3c`, `@style peg`, or `@style aether`) -- it's stripped before the source reaches whichever
   parser actually runs, so it doesn't need to be valid syntax in the
   target format at all.
 
@@ -113,24 +114,6 @@ defmodule Mix.Tasks.Ichor.Gen do
   """
 
   use Mix.Task
-
-  @style_by_extension %{
-    ".aether" => :aether,
-    ".abnf" => :abnf,
-    ".bnf" => :bnf,
-    ".ebnf" => :ebnf_iso,
-    ".peg" => :peg
-  }
-
-  @style_pragma_names %{
-    "aether" => :aether,
-    "abnf" => :abnf,
-    "bnf" => :bnf,
-    "ebnf" => :ebnf_iso,
-    "peg" => :peg
-  }
-
-  @style_pragma ~r/^[ \t]*@style[ \t]+(\S+)[ \t]*\r?\n?/m
 
   @impl Mix.Task
   def run(argv) do
@@ -200,34 +183,14 @@ defmodule Mix.Tasks.Ichor.Gen do
 
   defp format_ichor_errors(error), do: Ichor.Error.format(error)
 
-  # `@style` wins over the extension whenever present -- stripped
-  # unconditionally (even for `.aether` source, where it's merely
-  # redundant with the extension) since it isn't valid syntax in any of
-  # the five target formats.
+  # `@style` wins over the extension whenever present
+  # (`Ichor.GrammarImport.styled/2`, shared with the conformance adapter).
   defp extract_style(source, path) do
-    case Regex.run(@style_pragma, source) do
-      [match, name] ->
-        {style_from_pragma!(name), String.replace(source, match, "", global: false)}
-
-      nil ->
-        {style_from_extension(path), source}
+    case Ichor.GrammarImport.styled(source, path) do
+      {:ok, style, source} -> {style, source}
+      {:error, error} -> Mix.raise(error.message)
     end
   end
-
-  defp style_from_pragma!(name) do
-    case Map.fetch(@style_pragma_names, String.downcase(name)) do
-      {:ok, style} ->
-        style
-
-      :error ->
-        Mix.raise(
-          "unknown @style #{inspect(name)} -- expected one of: " <>
-            Enum.map_join(@style_pragma_names, ", ", fn {name, _style} -> name end)
-        )
-    end
-  end
-
-  defp style_from_extension(path), do: Map.get(@style_by_extension, Path.extname(path), :aether)
 
   # `use Ichor`-generated helpers are `defp` because they're spliced by
   # a macro into the caller's own module, where Elixir's unused-function
