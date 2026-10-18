@@ -126,11 +126,12 @@ defmodule Ichor.ConformanceTest do
     "sum.peg" => "sum <- num ('+' num)?\nnum <- [0-9]+\n",
     "sum.bnf" => "<sum> ::= <num> '+' <num> | <num>\n<num> ::= '1' | '2'\n",
     "sum.ebnf" => "sum = num, ['+', num] ;\nnum = '1' | '2' ;\n",
-    "sum.abnf" => "sum = num [\"+\" num]\r\nnum = \"1\" / \"2\"\r\n"
+    "sum.abnf" => "sum = num [\"+\" num]\r\nnum = \"1\" / \"2\"\r\n",
+    "sum.w3c.ebnf" => "sum ::= num ('+' num)?\nnum ::= '1' | '2'\n"
   }
 
   for {name, source} <- @notations, backend <- [:interpreted, :compiled] do
-    test "#{backend}: a grammar written as #{Path.extname(name)} is read by its importer",
+    test "#{backend}: a grammar written as #{name} is read by its importer",
          %{tmp_dir: dir} do
       path = grammar(dir, unquote(name), unquote(source))
 

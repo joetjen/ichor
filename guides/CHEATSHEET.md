@@ -53,7 +53,8 @@ ebnf`, `@style peg`, `@style aether`):
 | `.aether` (default) | Aether |
 | `.abnf` | ABNF (RFC 5234 + RFC 7405) |
 | `.bnf` | Classical BNF |
-| `.ebnf` | ISO EBNF (ISO/IEC 14977) |
+| `.ebnf`, `.iso.ebnf` | ISO EBNF (ISO/IEC 14977) |
+| `.w3c.ebnf` | W3C EBNF (the XML 1.0 notation) |
 | `.peg` | PEG |
 
 For a non-Aether style, the entry rule is the source's own
