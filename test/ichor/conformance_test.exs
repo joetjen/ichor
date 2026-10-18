@@ -1,7 +1,7 @@
 defmodule Ichor.ConformanceTest do
   @moduledoc """
   `Ichor.Conformance` — this implementation's answers to a batch of
-  Ichor Runtime Conformance Suite cases, through either backend, in the
+  Ichor Conformance Suite cases, through either backend, in the
   shape the suite reads; and `mix ichor.conformance`, which reads and
   writes them as files.
   """
