@@ -90,7 +90,7 @@ defmodule Ichor.MixProject do
 
   defp package do
     [
-      licenses: ["MIT"],
+      licenses: ["Apache-2.0"],
       links: %{
         "GitHub" => "https://github.com/joetjen/ichor",
         "GitHub Pages" => "https://joetjen.github.io/ichor/"
