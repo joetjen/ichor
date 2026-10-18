@@ -1,7 +1,7 @@
 defmodule Ichor.MixProject do
   use Mix.Project
 
-  @version "0.3.1"
+  @version "0.4.0"
 
   # `mix precommit` includes `test` as a step; without this, Mix runs
   # the whole alias chain (including `mix test`) in :dev, and `mix test`
@@ -63,10 +63,7 @@ defmodule Ichor.MixProject do
       # ExDoc is invoked via `MIX_ENV=dev mix docs`
 
       # === RUNTIME ===
-      # A path until ichor_runtime 0.3.0 is published, which this needs
-      # (Grammar.Source.trimmed/2, position/3, placed/2): the release
-      # commit puts back `"~> 0.3"`.
-      {:ichor_runtime, path: "../ichor_runtime"}
+      {:ichor_runtime, "~> 0.3"}
     ]
   end
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-18
+
 ### Added
 
 - **`mix ichor.conformance interpreted|compiled REQUEST ANSWER`**, this
@@ -73,8 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at the end of the input -- line 1, column 1 for no input at all.
   Both used to carry no line or column.
 - Both found by the Ichor Conformance Suite. Needs
-  `ichor_runtime` 0.3.0; until it is published, `mix.exs` takes it by
-  path.
+  `ichor_runtime` 0.3.
 
 ## [0.3.1] - 2026-10-07
 
