@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Grammar.VM.tokenize/3`**: a grammar's token stream for an input,
   interpreted, for every engine -- what a generated module's own
   `tokenize/2` answers. `Grammar.LR` and `Grammar.GLR` lex through it.
+- **`mix ichor.conformance` answers the toolkit cases**: `"pratt"`,
+  `"unify"`, `"solve"` and `"walk"` run `Ichor.Toolkit.Pratt`,
+  `Ichor.Backtrack.Bindings`, `Ichor.Backtrack.Tree` and
+  `Ichor.Toolkit.TermWalk` on data a case gives, through one standard
+  set of callbacks and one term module (`Ichor.Conformance.Toolkits`).
 - **`mix ichor.conformance` answers `"render"`**: the first error
   exactly as `Ichor.Error.format/1` writes it, or the tree when the text
   parses.
