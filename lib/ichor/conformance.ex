@@ -28,6 +28,11 @@ defmodule Ichor.Conformance do
   and runs that. The suite configures each as an implementation of its
   own, which is what checks that the two agree.
 
+  A `"tokens"` answers `"tokens"`, the grammar's token stream for the
+  text -- every token in order, trivia included, `@keywords` applied, as
+  `{name, text, line, column}`, an inline literal's token named nil --
+  or `"error"`, the lexer error's stage, line and column.
+
   A `"parse"` answers one of:
 
   - `"tree"` -- the default tree, what the parse comes to with no
@@ -76,9 +81,27 @@ defmodule Ichor.Conformance do
     {parser, parsers} = parser(path, backend, parsers)
 
     outcome =
-      with {:ok, run} <- parser,
-           {:ok, value} <- run.(text) do
+      with {:ok, made} <- parser,
+           {:ok, value} <- made.run.(text) do
         %{"tree" => encode(tree(value))}
+      else
+        {:error, error} -> %{"error" => encode(failure(error))}
+      end
+
+    {Map.put(outcome, "id", id), parsers}
+  end
+
+  defp result(
+         %{"id" => id, "operation" => "tokens", "grammar" => path, "text" => text},
+         backend,
+         parsers
+       ) do
+    {parser, parsers} = parser(path, backend, parsers)
+
+    outcome =
+      with {:ok, made} <- parser,
+           {:ok, tokens} <- made.tokenize.(text) do
+        %{"tokens" => encode(Enum.map(tokens, &token(&1, made.anonymous)))}
       else
         {:error, error} -> %{"error" => encode(failure(error))}
       end
@@ -109,7 +132,7 @@ defmodule Ichor.Conformance do
     with {:ok, style, source} <- Ichor.GrammarImport.styled(File.read!(path), path),
          {:ok, grammar} <- read(style, source, path),
          {:ok, analysed} <- Grammar.Analysis.run(grammar) do
-      {:ok, runner(backend, grammar, analysed)}
+      {:ok, Map.put(runner(backend, grammar, analysed), :anonymous, analysed.anon_tokens)}
     end
   end
 
@@ -127,7 +150,10 @@ defmodule Ichor.Conformance do
         :glr -> Grammar.GLR
       end
 
-    fn text -> engine.run(analysed, text, NoActions) end
+    %{
+      run: fn text -> engine.run(analysed, text, NoActions) end,
+      tokenize: fn text -> Grammar.VM.tokenize(analysed, text) end
+    }
   end
 
   defp runner(:compiled, grammar, _analysed) do
@@ -139,7 +165,14 @@ defmodule Ichor.Conformance do
       Macro.Env.location(__ENV__)
     )
 
-    fn text -> module.run(text) end
+    %{run: fn text -> module.run(text) end, tokenize: fn text -> module.tokenize(text, nil) end}
+  end
+
+  # A token as the suite writes it, `{name, text, line, column}`. An
+  # inline literal's token has no name its author chose -- `ANON_1` is
+  # generated -- so its name is nil, and it is known by its text.
+  defp token(%Grammar.VM.Token{name: name, text: text, line: line, column: column}, anonymous) do
+    {if(MapSet.member?(anonymous, name), do: nil, else: name), text, line, column}
   end
 
   # A value as the suite writes it: a node as a tagged tuple, without

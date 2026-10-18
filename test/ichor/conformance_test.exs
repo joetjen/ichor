@@ -145,6 +145,51 @@ defmodule Ichor.ConformanceTest do
     assert [%{"tree" => _}] = answer(:compiled, [parse("a", path, "12")])
   end
 
+  defp tokens_case(id, grammar, text),
+    do: %{"id" => id, "operation" => "tokens", "grammar" => grammar, "text" => text}
+
+  defp token(name, text, line, column),
+    do: %{
+      "tuple" => [
+        name && %{"keyword" => name},
+        text,
+        %{"integer" => Integer.to_string(line)},
+        %{"integer" => Integer.to_string(column)}
+      ]
+    }
+
+  for backend <- [:interpreted, :compiled] do
+    # An inline literal's token has no name its author chose -- `ANON_1`
+    # is generated, and the suite never compares a generated name -- so
+    # it is written with the name nil, and known by its text.
+    test "#{backend}: tokens answers the stream, trivia included, as #(NAME text line column)",
+         %{tmp_dir: dir} do
+      path = grammar(dir, "calculator.aether", @calculator)
+
+      assert [%{"id" => "a", "tokens" => tokens}] =
+               answer(unquote(backend), [tokens_case("a", path, "2 +\n3")])
+
+      assert tokens == [
+               token("NUMBER", "2", 1, 1),
+               token("SPACE", " ", 1, 2),
+               token(nil, "+", 1, 3),
+               token("SPACE", "\n", 1, 4),
+               token("NUMBER", "3", 2, 1)
+             ]
+    end
+
+    test "#{backend}: tokens answers a character no token matches as a lexer error",
+         %{tmp_dir: dir} do
+      path = grammar(dir, "calculator.aether", @calculator)
+
+      assert [%{"id" => "a", "error" => %{"map" => pairs}}] =
+               answer(unquote(backend), [tokens_case("a", path, "2 $")])
+
+      assert [%{"keyword" => "stage"}, %{"keyword" => "lexer"}] in pairs
+      assert [%{"keyword" => "column"}, %{"integer" => "3"}] in pairs
+    end
+  end
+
   test "the two backends agree on a nested tree", %{tmp_dir: dir} do
     path = grammar(dir, "calculator.aether", @calculator)
     cases = [parse("a", path, "(1 + 2) * 3 - 4")]

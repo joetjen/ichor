@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is what shows the two agree. A case's grammar may be written in
   any notation Ichor reads -- Aether, ABNF, BNF, ISO EBNF, PEG -- told by
   its extension or an `@style` line.
+- **`Grammar.VM.tokenize/3`**: a grammar's token stream for an input,
+  interpreted, for every engine -- what a generated module's own
+  `tokenize/2` answers. `Grammar.LR` and `Grammar.GLR` lex through it.
+- **`mix ichor.conformance` answers `"tokens"`** as well as `"parse"`:
+  the token stream, trivia included, as `{name, text, line, column}`,
+  an inline literal's generated token named nil.
 - **W3C EBNF can be imported** (`:ebnf_w3c`), as the other four
   notations always could: `Ichor.EBNF.W3C` read it but
   `Ichor.GrammarImport` did not offer it, which the Praxis port already
