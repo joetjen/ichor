@@ -55,9 +55,17 @@ Read before designing, since the shape follows from it:
 ### Two passes, one of them cheap
 
 The lossless parser is the ordinary parser with one addition: every
-successful rule invocation is recorded as `{rule, from, to, children}`,
-in source order, in the frame that already holds its captures. After
-the match, one linear pass **weaves** the token stream into that rule
+successful rule invocation is recorded as `{rule, from, to, children}`.
+The records travel **inside the ordinary captures**, under one reserved
+name (`Ichor.Syntax.Record.key/0`, `:"$syntax"`; `$` is no name
+character in any notation Ichor reads). Every backend already discards
+a failed alternative's captures and merges a name captured more than
+once into one ordered list, so an abandoned rule's record never
+survives and the rest stay in source order -- with no bookkeeping of
+their own. A rule call takes its callee's records out of the callee's
+captures (`Record.called/4`) before building the ordinary
+`{:rule, ...}` capture, so `Ichor.Actions` never sees one. After the
+match, one linear pass **weaves** the token stream into that rule
 tree: each token becomes a leaf of the deepest rule whose range
 contains it.
 
@@ -109,7 +117,9 @@ calls for it:
 
 1. **Lossless.** `Ichor.Syntax.text(root) == input`, byte for byte, for
    every input the ordinary parser accepts.
-2. **Ordered.** The leaves, read left to right, are the token stream.
+2. **Ordered.** The leaves, read left to right, are the token stream. Every
+   token is a leaf: literals and punctuation (`:`, `,`, brackets) as much as
+   named tokens and trivia.
 3. **Trivia sits between, never at an edge.** No node other than the
    root begins or ends with a trivia token. A trivia token belongs to
    the deepest node that has something significant on *both* sides of
@@ -147,8 +157,16 @@ moving from `@engine peg` to `lr` keeps its lossless tree.
 
 | | PEG | LR | GLR |
 |---|---|---|---|
-| Interpreted (`ichor`) | `Grammar.VM`: the frame gains `nodes` | `Grammar.LR`: a reduction builds the node from its stack entries | `Grammar.GLR`: the same, on the path the run already keeps |
-| Native (generated) | a second set of rule functions | the shared LR runtime in `ichor_runtime` | the shared GLR runtime |
+| Interpreted (`ichor`) | `Grammar.VM`: the rule program with every rule call's capture recording (`:lossless_rule`) | `Grammar.LR`: `Grammar.LR.Lossless`, over the table's maps | `Grammar.GLR`: the shared GLR runtime, building with `Record.reduced/3` |
+| Native (generated) | a second set of rule functions (`lossless_rule__*`) | the table embedded as lookup functions, run by `Grammar.LR.Lossless` | the same compiled lookups, the shared runtime building with `Record.reduced/3` |
+
+For LR and GLR, `Record.reduced/3` is `Captures.build/3` recording: a
+reduction records each grammar rule on its right-hand side over the
+span its stack entry covers, and splices the records of the helpers LR
+desugaring made up (`$star_1`, ... -- every name starting with `$`).
+LR accepts on the root's own entry, so its captures hold the root's
+children, as a PEG root's do, and every engine makes the root's record
+the same way (`Record.root/3`).
 
 GLR breaks a surviving ambiguity by a recorded choice. The lossless run
 makes the same choice, so invariant 4 holds there too.
@@ -165,8 +183,13 @@ mix ichor.gen dxn.aether --lossless
 
 With the option, the generated module gains `parse_lossless/1` and
 `run_lossless/1,2`. The latter returns `{:ok, value, %Ichor.Syntax.Node{}}`.
-Without it, the generated code is **unchanged**, which is checked by
-comparing generated source before and after on the test grammars. The
+Without it, the generated code is **unchanged**. That was checked on
+all 25 grammars in the repository by generating each before and after
+the change. Generation turned out not to be deterministic between runs
+-- rule order follows the atom table's map ordering, and the
+anonymous `parse_expr__N` functions are numbered in that order -- so
+the comparison is modulo order and numbering: no grammar's generated
+code differs in content. The
 interpreted backends get `Grammar.VM.parse_lossless/3`,
 `Grammar.LR.parse_lossless/3` and `Grammar.GLR.parse_lossless/3`.
 
@@ -176,6 +199,18 @@ run-time flag would put a check in the fast path of every parser. A
 second set of functions keeps the fast path untouched, at the cost of
 roughly doubling the generated parser. Only a grammar that asks for it
 should pay that.
+
+**What it costs a caller who never asks for the tree.** Nothing at run
+time. `parse/1` and `run/1,2` call the same functions they call
+without the option, and there is no flag to check. The lossless
+functions are only reached from `parse_lossless/1` and
+`run_lossless/1,2`. The cost is module size: for PEG, the rule functions
+exist twice; for LR, the action table is added as lookup functions,
+beside the compiled per-state functions, which are left as they are;
+for GLR, only the lossless entry points are added. One run-time cost
+remains outside generated code: the shared GLR runtime now calls its
+capture builder through a function value -- one indirect call per
+reduction, on the ordinary path too.
 
 ### `Ichor.Error.data`
 
@@ -209,6 +244,9 @@ Then the Praxis ports (`libs_prx/ichor_runtime`, `libs_prx/ichor`,
 `ichor.runtime.syntax`, `gen --lossless`. They stay one step ahead of
 the Elixir release and unreleased, under the porting rule.
 
+The ports build the same tree, node for node, from the same grammar,
+so a Praxis `Dextrin.Document` is a port and not a redesign.
+
 Then `ichor_conformance` gains a `lossless` operation: the tree, as
 typed data, compared across all four implementations, plus invariant 1
 on every existing `parse` case. That is how "no second grammar to keep
@@ -225,6 +263,23 @@ in step" is checked, rather than hoped for.
   Dextrin can split it, re-tokenizing just that text, or it can change
   `@skip` to a token that matches one space-run or one comment, and let
   `SKIP*` repeat it. Ichor keeps tokens as the grammar defines them.
+  (Dextrin chose to keep `TRIVIA` one token and split it itself.)
+- **Rules a `@native(...)` rule matches.** Custom code is handed ordinary
+  captures, whichever parser called it, so the rules it matches are not
+  nodes; their tokens belong to the node of the rule that called the
+  custom code.
+- **Capture labels.** A child does not say which `name:` captured it.
+  Dextrin navigates by rule name and the order of significant children;
+  labels can be added in a later minor without breaking anything.
+
+## Found on the way
+
+- **An LR or GLR rule repeated three times or more was a nested list.**
+  Comparing `run_lossless`'s value with `run`'s across engines showed
+  `doc := entry+` with three entries giving `[a, [b, c]]` on LR: the
+  splice of a repetition's helper merged its list as one value. Fixed in
+  `ichor_runtime`'s `Grammar.LRTable.Captures`, for the ordinary parser
+  too.
 
 ## Decided
 

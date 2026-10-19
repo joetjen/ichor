@@ -38,6 +38,15 @@ defmodule Ichor do
   `Grammar.Native`/`Grammar.Native.LR`/`Grammar.Native.GLR` by
   `@engine`).
 
+  `lossless: true` adds `parse_lossless/1,2` and `run_lossless/1,2` to
+  the module: the lossless tree of an input (`Ichor.Syntax`) -- every
+  byte, trivia and punctuation included, under every rule that matched
+  -- for a tool that edits a document and writes it back. `parse/1,2`
+  and `run/1,2` are exactly what they are without it; the cost is the
+  module's size (`design/lossless-mode.md`):
+
+      use Ichor, grammar: "config.aether", actions: Config.Actions, lossless: true
+
   `generate/3` is also `Mix.Tasks.Ichor.Gen`'s entry point: the same
   parse-analyze-codegen pipeline, just called from a Mix task instead of
   from macro expansion, so a grammar can be compiled to a plain,
@@ -67,12 +76,14 @@ defmodule Ichor do
   Raises `CompileError` if `source` fails to parse or fails analysis
   (unresolved rule references, a non-`peg` engine picked for a grammar
   Analysis flags, an LR/GLR grammar with unresolvable conflicts, etc.).
+
+  `opts` takes `lossless: true`, as `use Ichor` does.
   """
-  @spec generate(String.t(), String.t() | nil, module()) :: Macro.t()
-  def generate(source, file, actions_module) do
+  @spec generate(String.t(), String.t() | nil, module(), keyword()) :: Macro.t()
+  def generate(source, file, actions_module, opts \\ []) do
     source
     |> parse_and_analyze!(file)
-    |> dispatch(actions_module)
+    |> dispatch(actions_module, opts)
   end
 
   @doc """
@@ -84,20 +95,20 @@ defmodule Ichor do
   everything after parsing (analysis, engine dispatch) is identical.
 
   Raises `CompileError` on the same conditions `generate/3` does, minus
-  the parse step.
+  the parse step. `opts` takes `lossless: true`.
   """
-  @spec generate_from_grammar(Aether.Grammar.t(), module()) :: Macro.t()
-  def generate_from_grammar(grammar, actions_module) do
+  @spec generate_from_grammar(Aether.Grammar.t(), module(), keyword()) :: Macro.t()
+  def generate_from_grammar(grammar, actions_module, opts \\ []) do
     grammar
     |> analyze!()
-    |> dispatch(actions_module)
+    |> dispatch(actions_module, opts)
   end
 
-  defp dispatch(grammar, actions_module) do
+  defp dispatch(grammar, actions_module, opts) do
     case grammar.engine do
-      :peg -> Grammar.Native.generate(grammar, actions_module)
-      :lr -> Grammar.Native.LR.generate(grammar, actions_module)
-      :glr -> Grammar.Native.GLR.generate(grammar, actions_module)
+      :peg -> Grammar.Native.generate(grammar, actions_module, opts)
+      :lr -> Grammar.Native.LR.generate(grammar, actions_module, opts)
+      :glr -> Grammar.Native.GLR.generate(grammar, actions_module, opts)
     end
   end
 
@@ -126,7 +137,8 @@ defmodule Ichor do
                 "use Ichor accepts exactly one of grammar: or grammar_source:, not both"
       end
 
-    body = generate(source, file, actions_module)
+    lossless = eval_opt(opts, :lossless, __CALLER__) || false
+    body = generate(source, file, actions_module, lossless: lossless)
 
     resource_attr =
       if external_resource do

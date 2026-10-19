@@ -51,7 +51,8 @@ defmodule Grammar.VM do
 
   alias Grammar.IR
   alias Grammar.VM.{CharCompiler, RuleCompiler, TokenInterpreter, Tokenizer}
-  alias Ichor.{Actions, Error}
+  alias Ichor.{Actions, Error, Syntax}
+  alias Ichor.Syntax.Record
 
   @doc """
   Compiles `grammar` and matches it against `input`, requiring the root
@@ -85,6 +86,39 @@ defmodule Grammar.VM do
              RuleCompiler.capture_shapes(grammar)
            ) do
       {:ok, value}
+    end
+  end
+
+  @doc """
+  Like `parse/3`, but returns the lossless tree of `input`
+  (`Ichor.Syntax`): every byte of it, trivia and punctuation included,
+  under every rule that matched. Fails exactly as `parse/3` fails.
+  """
+  @spec parse_lossless(Aether.Grammar.t(), String.t(), term()) ::
+          {:ok, Ichor.Syntax.Node.t()} | {:error, Error.t() | [Error.t()]}
+  def parse_lossless(%Aether.Grammar{} = grammar, input, context \\ nil) do
+    with {:ok, tree, _raw_captures} <- lossless_match(grammar, input, context) do
+      {:ok, tree}
+    end
+  end
+
+  @doc """
+  Like `run/4`, returning the lossless tree of `input` beside the value:
+  `{:ok, value, tree}`, `value` being exactly what `run/4` returns.
+  """
+  @spec run_lossless(Aether.Grammar.t(), String.t(), module(), Actions.context()) ::
+          {:ok, term(), Ichor.Syntax.Node.t()} | {:error, Error.t() | [Error.t()]}
+  def run_lossless(%Aether.Grammar{} = grammar, input, actions_module, initial_context \\ nil) do
+    with {:ok, tree, raw_captures} <- lossless_match(grammar, input, initial_context),
+         {:ok, value, _context} <-
+           Actions.evaluate(
+             grammar.root,
+             raw_captures,
+             actions_module,
+             initial_context,
+             RuleCompiler.capture_shapes(grammar)
+           ) do
+      {:ok, value, tree}
     end
   end
 
@@ -249,12 +283,39 @@ defmodule Grammar.VM do
   end
 
   defp match(%Aether.Grammar{} = grammar, input, context) do
-    with {:ok, grammar} <- check_engine(grammar) do
-      do_match(grammar, input, context)
+    with {:ok, grammar} <- check_engine(grammar),
+         {:ok, pos, raw_captures, _tokens} <- do_match(grammar, input, context, & &1) do
+      {:ok, pos, raw_captures}
     end
   end
 
-  defp do_match(grammar, input, context) do
+  # The lossless match: the rule program with every rule call recording
+  # (`lossless/1`), and the records woven with the whole token stream.
+  defp lossless_match(%Aether.Grammar{} = grammar, input, context) do
+    with {:ok, grammar} <- check_engine(grammar),
+         {:ok, pos, raw_captures, tokens} <- do_match(grammar, input, context, &lossless/1) do
+      {raw_captures, root} = Record.root(grammar.root, pos, raw_captures)
+      {:ok, Syntax.tree(root, tokens, grammar.skip), raw_captures}
+    end
+  end
+
+  # A rule program whose rule calls record themselves for the lossless
+  # tree (`Grammar.VM.TokenInterpreter`'s `:lossless_rule` capture).
+  # Nothing else about the program changes, so it accepts what the
+  # ordinary one accepts and builds the same captures.
+  defp lossless(%Grammar.VM.Program{instructions: instructions} = program) do
+    recording =
+      instructions
+      |> Tuple.to_list()
+      |> Enum.map(fn
+        {:cap_start, name, :rule, ref_name} -> {:cap_start, name, :lossless_rule, ref_name}
+        instruction -> instruction
+      end)
+
+    %{program | instructions: List.to_tuple(recording)}
+  end
+
+  defp do_match(grammar, input, context, program_fn) do
     {char_program, custom_lexemes} = CharCompiler.compile(grammar.tokens)
     rule_program = RuleCompiler.compile(grammar)
 
@@ -271,10 +332,11 @@ defmodule Grammar.VM do
          {:ok, tokens} <- Grammar.Lexer.reclassify(raw_tokens, grammar.refiners) do
       stream = tokens |> Grammar.Source.trimmed(grammar.skip) |> List.to_tuple()
       entry = Map.fetch!(rule_program.entry_points, grammar.root)
+      instructions = program_fn.(rule_program).instructions
 
-      case TokenInterpreter.run(rule_program.instructions, entry, stream, context) do
+      case TokenInterpreter.run(instructions, entry, stream, context) do
         {:ok, pos, raw_captures} when pos == tuple_size(stream) ->
-          {:ok, pos, raw_captures}
+          {:ok, pos, raw_captures, tokens}
 
         {:ok, pos, _raw_captures} ->
           {:error, unexpected_token_error(stream, pos, input)}

@@ -405,7 +405,54 @@ needs something at *match* time — precedence-climbing expression parsing
 of a generated parser, called on every match/evaluation rather than once
 at codegen time.
 
-## 10. Where to go from here
+## 10. Keeping every byte: the lossless mode
+
+Everything so far turns text into a value and forgets the rest: the
+comments, the whitespace, which of two equal spellings was used. That
+is what a parser is for, most of the time. A tool that *edits* a
+document and writes it back — a formatter, a dependency updater, a
+config migration — needs the rest too, or every edit reformats the file
+and drops its comments.
+
+Generate the parser with `lossless: true` (`--lossless` for
+`mix ichor.gen`), and it gains `parse_lossless/1,2` and
+`run_lossless/1,2` beside the ordinary functions:
+
+```elixir
+defmodule Config do
+  use Ichor, grammar: "config.aether", actions: Config.Actions, lossless: true
+end
+
+{:ok, value, tree} = Config.run_lossless(source)
+```
+
+`value` is exactly what `Config.run(source)` returns. `tree` is an
+`Ichor.Syntax.Node`: every grammar rule that matched is a node, and
+every token of the input is a leaf under one — named tokens, the
+literals and punctuation the grammar wrote inline, and the `@skip`
+trivia, marked `trivia: true`. Each node and token knows its byte
+`offset`, `line` and `column`, and a node its `size`, so the input a
+node covers is `binary_part(source, node.offset, node.size)` —
+untouched parts of a document can be written back as they were.
+
+The tree keeps a few promises whatever the grammar:
+`Ichor.Syntax.text(tree) == source`, byte for byte; the leaves, read in
+order, are every token of the input; and trivia never sits at a node's
+edge — it belongs to the deepest node with something significant on
+both sides, and the root holds what comes before the first token and
+after the last. Which comment belongs to which value is left to you:
+that is a policy of your format, and the tree gives you each trivia
+token's siblings, line and column to decide it with.
+
+The ordinary `parse` and `run` are untouched by the option: same code,
+same speed. The cost is the generated module's size, since the
+lossless parser has functions of its own. A rule a `@native(...)` rule
+matches is not a node of the tree; its tokens belong to the node of the
+rule that called the custom code. The interpreted backends have the same
+functions without generating anything: `Grammar.VM.parse_lossless/3`,
+`run_lossless/4`, and likewise on `Grammar.LR` and `Grammar.GLR`.
+
+## 11. Where to go from here
 
 - [Examples](EXAMPLES.md) walks through several complete, working
   grammars covering different shapes of problem: a LISP dialect (special

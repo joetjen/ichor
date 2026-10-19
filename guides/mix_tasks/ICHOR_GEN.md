@@ -23,6 +23,7 @@ disk as an ordinary module you check in like any other source file.
 | `--actions` | Yes | The `Ichor.Actions` module the generated `run/1,2` dispatches to, e.g. `MyApp.Calculator.Actions`. Baked in as a literal reference — it doesn't need to exist yet, only when the generated file's own callers run. |
 | `--out` | Yes | Path to write the generated module to. |
 | `--root` | No | The entry rule's name. Only meaningful for non-Aether grammar styles (see below) — Aether always uses its own `@root` pragma. |
+| `--lossless` | No | Also generate `parse_lossless/1,2` and `run_lossless/1,2`: the lossless tree of an input (`Ichor.Syntax`), every byte of it, for a tool that edits a document and writes it back. `parse/1,2` and `run/1,2` are exactly what they are without it; the module is larger. See [Tutorial §10](../TUTORIAL.md#10-keeping-every-byte-the-lossless-mode). |
 
 ## Example: a basic grammar
 

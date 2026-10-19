@@ -79,6 +79,60 @@ defmodule Grammar.GLR do
 
   # ---- engine guard ---------------------------------------------------------
 
+  @doc """
+  Like `parse/3`, but returns the lossless tree of `input`
+  (`Ichor.Syntax`): every byte of it, trivia and punctuation included,
+  under every rule the grammar wrote that matched. Fails exactly as
+  `parse/3` fails.
+  """
+  @spec parse_lossless(Aether.Grammar.t(), String.t(), term()) ::
+          {:ok, Ichor.Syntax.Node.t()} | {:error, Error.t() | [Error.t()]}
+  def parse_lossless(%Aether.Grammar{} = grammar, input, context \\ nil) do
+    with {:ok, compiled} <- compile(grammar),
+         {:ok, tree, _raw_captures} <- lossless_match(compiled, grammar, input, context) do
+      {:ok, tree}
+    end
+  end
+
+  @doc """
+  Like `run/4`, returning the lossless tree of `input` beside the value:
+  `{:ok, value, tree}`, `value` being exactly what `run/4` returns.
+  """
+  @spec run_lossless(Aether.Grammar.t(), String.t(), module(), Actions.context()) ::
+          {:ok, term(), Ichor.Syntax.Node.t()} | {:error, Error.t() | [Error.t()]}
+  def run_lossless(%Aether.Grammar{} = grammar, input, actions_module, initial_context \\ nil) do
+    with {:ok, compiled} <- compile(grammar) do
+      compiled
+      |> lossless_match(grammar, input, initial_context)
+      |> Grammar.LosslessShiftReduce.evaluated(
+        grammar,
+        actions_module,
+        initial_context,
+        compiled.capture_shapes
+      )
+    end
+  end
+
+  defp lossless_match(%__MODULE__{table: table}, grammar, input, context) do
+    Grammar.LosslessShiftReduce.matched(
+      grammar,
+      table,
+      input,
+      context,
+      fn action_fn, goto_fn, productions, start_state, end_symbol, stream ->
+        Grammar.GLR.Runtime.run(
+          action_fn,
+          goto_fn,
+          productions,
+          start_state,
+          end_symbol,
+          stream,
+          &Ichor.Syntax.Record.reduced/3
+        )
+      end
+    )
+  end
+
   defp check_engine(%Aether.Grammar{engine: :glr} = grammar), do: {:ok, grammar}
 
   defp check_engine(%Aether.Grammar{engine: engine}) do
