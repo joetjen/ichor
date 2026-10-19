@@ -37,6 +37,7 @@ defmodule Grammar.LRTable.Desugar do
 
   alias Grammar.IR
   alias Grammar.LRTable.Production
+  alias Grammar.VM.RuleCompiler
   alias Ichor.Error
 
   @start_symbol :"$start"
@@ -146,7 +147,15 @@ defmodule Grammar.LRTable.Desugar do
     {rev_rhs, rev_captures, _index, state} =
       Enum.reduce(elements, {[], [], 0, state}, fn el, {rhs_acc, cap_acc, idx, state} ->
         {symbol, capture, state} = desugar_element(el, discard?, state)
-        cap_acc = if capture, do: [shift_index(capture, idx) | cap_acc], else: cap_acc
+
+        # An element captures nothing, once, or -- a capture over a group
+        # -- twice at the same position: the group's own captures spliced
+        # in, then its text.
+        cap_acc =
+          capture
+          |> List.wrap()
+          |> Enum.reduce(cap_acc, fn one, acc -> [shift_index(one, idx) | acc] end)
+
         {[symbol | rhs_acc], cap_acc, idx + 1, state}
       end)
 
@@ -180,14 +189,24 @@ defmodule Grammar.LRTable.Desugar do
     {symbol, capture, state}
   end
 
-  # A captured *composite* (anything else): `RuleCompiler.leaf/4`'s own
-  # unconditional fallback for this shape is a span-based `:text` capture,
-  # discarding whatever's inside -- mirrored exactly here, so the helper's
-  # own internal captures are never even built (discard_inner? always true).
+  # A captured *composite* (anything else) is its text, with the
+  # captures inside it kept beside it, as `RuleCompiler.leaf/4` does: the
+  # helper's own captures spliced in, then the `:text` over its span. A
+  # reference the capture owns (`RuleCompiler.owned_ref/2`, the `SIGN` of
+  # `sign:SIGN?`) is captured under the capture's name only, so then the
+  # helper keeps nothing and there is nothing to splice.
   defp desugar_element(%IR.Capture{name: cap_name, expr: inner}, discard?, state) do
     {helper, state} = fresh_helper(:grp, state)
-    state = desugar_group_body(helper, inner, true, state)
-    capture = if discard?, do: nil, else: {0, cap_name, :text}
+    owned = RuleCompiler.owned_ref(inner, state.excluded)
+    state = desugar_group_body(helper, inner, discard? or not is_nil(owned), state)
+
+    capture =
+      cond do
+        discard? -> nil
+        owned -> {0, cap_name, :text}
+        true -> [{0, nil, :splice}, {0, cap_name, :text}]
+      end
+
     {{:nonterminal, helper}, capture, state}
   end
 

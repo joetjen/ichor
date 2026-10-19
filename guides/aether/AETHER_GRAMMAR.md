@@ -31,7 +31,7 @@ POSIX      := "[:" ("alpha" | "alnum" | "digit" | "space" | "hex") ":]"
 CHAR_CLASS := "[" "^"? (POSIX | ESCAPE | !"]" .)* "]"
 REGEX      := "/" ("\\" . | "[" ("\\" . | !"]" .)* "]" | ![/\[] .)* "/"
 
-grammar_file := TRIVIA? header definition* TRIVIA?
+grammar_file := header definition*
 
 header := "@grammar" name:STRING "@root" root:LOWER_NAME pragma*
 pragma := "@skip" UPPER_NAME | "@noskip" | "@case_insensitive" | "@engine" LOWER_NAME
@@ -68,9 +68,12 @@ hint_entry := LOWER_NAME ":" (LOWER_NAME | "(" (LOWER_NAME ("," LOWER_NAME)*)? "
 - **`sequence` stops in front of `NAME :=`.** That lookahead is the
   whole reason a definition needs no terminator: a bare name is
   otherwise a perfectly good next term.
-- **`TRIVIA?` at both ends of `grammar_file`** because `@skip` only
-  splices between the parts of a rule, never before the first or after
-  the last — a file may begin with a comment and end with a newline.
+- **No `TRIVIA?` at either end of `grammar_file`**, though a file may
+  begin with a comment and end with a newline: `@skip` splices only
+  between the parts of a rule, and since 0.4.0 every engine drops the
+  skip tokens before the input's first token and after its last
+  (`Grammar.Source.trimmed/2`). Writing `TRIVIA?` there is still allowed;
+  it is no longer needed.
 - **Pragmas are header-only.** `pragma*` sits inside `header`, so a
   `@skip` written after the first definition is a syntax error, as it
   is for `Aether.Reader`.

@@ -381,9 +381,15 @@ defmodule Grammar.VM.TokenInterpreter do
     {sub_captures, record} = Record.called(ref_name, start_pos, pos, last_result)
 
     captures
-    |> merge_capture(name, Capture.at({:rule, ref_name, sub_captures}, start_pos, pos))
+    |> kept(name, Capture.at({:rule, ref_name, sub_captures}, start_pos, pos))
     |> merge_capture(Record.key(), record)
   end
+
+  # A capture named nil is a reference a capture owns
+  # (`Grammar.VM.RuleCompiler.owned_ref/1`): it matched, and a lossless
+  # program records it above, but nothing is kept under any name.
+  defp captured(captures, nil, _kind, _ref_name, _stream, _start_pos, _pos, _last_result),
+    do: captures
 
   defp captured(captures, name, kind, ref_name, stream, start_pos, pos, last_result) do
     raw = build_raw_capture(kind, ref_name, stream, start_pos, pos, last_result)
@@ -423,6 +429,11 @@ defmodule Grammar.VM.TokenInterpreter do
   # naturally ends up as a list without the caller having to know in advance
   # how many times it'll match. Mirrors `Grammar.Native.Runtime.Parser`'s
   # own private `merge_one`/`as_list` helpers (from `ichor_runtime`) exactly.
+  # A capture under `name`, unless the name is nil: a reference a
+  # capture owns is recorded, never kept.
+  defp kept(captures, nil, _raw), do: captures
+  defp kept(captures, name, raw), do: merge_capture(captures, name, raw)
+
   defp merge_capture(captures, name, raw) do
     case List.keyfind(captures, name, 0) do
       nil -> captures ++ [{name, raw}]

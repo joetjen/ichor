@@ -82,7 +82,7 @@ defmodule Grammar.LRTableTest do
       assert Enum.any?(helper_prods, &match?({:nonterminal, ^helper}, List.first(&1.rhs)))
     end
 
-    test "a captured composite (not a bare RuleRef) becomes a :text-kind span capture" do
+    test "a captured composite (not a bare RuleRef) is its text, its own captures spliced in beside it" do
       grammar =
         compile!(~S"""
         @grammar "t"
@@ -97,8 +97,29 @@ defmodule Grammar.LRTableTest do
       {:ok, productions} = Desugar.run(grammar)
       [r_prod] = Enum.filter(productions, &(&1.lhs == :r))
 
-      assert [{:nonterminal, _helper}] = r_prod.rhs
+      assert [{:nonterminal, helper}] = r_prod.rhs
+      assert r_prod.captures == [{0, nil, :splice}, {0, :x, :text}]
+
+      [helper_prod] = Enum.filter(productions, &(&1.lhs == helper))
+      assert helper_prod.captures == [{0, :A, :token}, {1, :B, :token}]
+    end
+
+    test "a capture owns the reference it directly wraps: nothing captures it under its own name" do
+      grammar =
+        compile!(~S"""
+        @grammar "t"
+        @root r
+        @engine glr
+        @noskip
+        A := "a"
+        r := x:A*
+        """)
+
+      {:ok, productions} = Desugar.run(grammar)
+      [r_prod] = Enum.filter(productions, &(&1.lhs == :r))
+
       assert r_prod.captures == [{0, :x, :text}]
+      refute Enum.any?(productions, fn p -> Enum.any?(p.captures, &match?({_, :A, _}, &1)) end)
     end
 
     test "@engine lr/glr rejects rule-level constructs LR can't table-compile" do

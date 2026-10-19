@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A capture owns the reference it directly wraps**, by every engine:
+  in `sign:SIGN?`, `items:item*` or `n:X{1,3}` the reference is captured
+  under the capture's name only. The PEG backends also captured it
+  under its own name, so `sign:sign?` came out as a list of two -- the
+  rule's node and the text -- and `sign:SIGN?` handed an action both
+  `sign` and `SIGN`. The lossless tree still has a node for the rule.
+- **Every engine keeps the captures inside a captured group**, as the
+  PEG backends always did: `all:(k:A B)` gives `all`, `k` and `B`. LR
+  and GLR dropped them, and reported a repeated reference inside one
+  (`many:A*`) as an empty `A: []`.
+- **The Aether guides**: `Grammar.VM` runs only `@engine peg`
+  (`Grammar.LR` and `Grammar.GLR` run the others, interpreted), and
+  `TRIVIA?` at the ends of a grammar is no longer needed since every
+  engine trims the skip tokens around the input.
+
 - **An action's error says where**, by every engine and both backends,
   lossless or not, and in `run_sequence`: an error a `handle_rule/3` or
   `handle_token/3` returns with no line is placed where that rule or
