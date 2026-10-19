@@ -8,7 +8,7 @@ defmodule Grammar.Native do
   skipping bytecode interpretation entirely.
 
   Dispatches to `actions_module` via a compile-time-known module
-  reference: `Ichor.Actions.evaluate/5` is called directly with that
+  reference: `Ichor.Actions.evaluate/6` is called directly with that
   module baked in as a literal, never looked up dynamically -- reusing
   `Ichor.Actions`'s own default-fallback and capture-shape-normalization
   logic rather than re-deriving it, since the actual speed win is in the
@@ -65,10 +65,26 @@ defmodule Grammar.Native do
       @spec parse(String.t(), term()) ::
               {:ok, non_neg_integer(), Ichor.Capture.raw_captures()} | {:error, Ichor.Error.t()}
       def parse(input, context \\ nil) do
+        with {:ok, pos, raw_captures, _locator} <- match(input, context) do
+          {:ok, pos, Ichor.Capture.plain(raw_captures)}
+        end
+      end
+
+      # The match `parse/2` and `run/2` share: the raw captures with the
+      # positions the rules recorded (`Ichor.Capture.at/3`), and the
+      # locator that turns them into spans. `parse/2` hands its caller
+      # plain captures, as it always has.
+      defp match(input, context) do
         with {:ok, tokens} <- tokenize(input, context) do
           stream = tokens |> Grammar.Source.trimmed(unquote(grammar.skip)) |> List.to_tuple()
 
-          unquote(matched(root_fn, root, quote(do: {:ok, pos, raw_captures})))
+          unquote(
+            matched(
+              root_fn,
+              root,
+              quote(do: {:ok, pos, raw_captures, Grammar.Source.Locator.new(stream, input)})
+            )
+          )
         end
       end
 
@@ -76,14 +92,15 @@ defmodule Grammar.Native do
       @spec run(String.t(), Ichor.Actions.context()) ::
               {:ok, term()} | {:error, Ichor.Error.t() | [Ichor.Error.t()]}
       def run(input, initial_context \\ nil) do
-        with {:ok, _pos, raw_captures} <- parse(input, initial_context),
+        with {:ok, _pos, raw_captures, locator} <- match(input, initial_context),
              {:ok, value, _context} <-
                Ichor.Actions.evaluate(
                  unquote(root),
                  raw_captures,
                  unquote(actions_module),
                  initial_context,
-                 unquote(capture_shapes)
+                 unquote(capture_shapes),
+                 locator: locator
                ) do
           {:ok, value}
         end
@@ -95,11 +112,19 @@ defmodule Grammar.Native do
               | {:error, Ichor.Error.t() | [Ichor.Error.t()]}
       def run_sequence(input, initial_context) do
         with {:ok, tokens} <- tokenize(input, initial_context) do
-          do_run_sequence(List.to_tuple(tokens), 0, initial_context, [])
+          stream = List.to_tuple(tokens)
+
+          do_run_sequence(
+            stream,
+            0,
+            initial_context,
+            [],
+            Grammar.Source.Locator.new(stream, input)
+          )
         end
       end
 
-      defp do_run_sequence(stream, pos, ctx, acc) do
+      defp do_run_sequence(stream, pos, ctx, acc, locator) do
         pos = Parser.skip_leading_trivia(stream, pos, unquote(grammar.skip))
 
         if pos >= tuple_size(stream) do
@@ -112,10 +137,15 @@ defmodule Grammar.Native do
                      raw_captures,
                      unquote(actions_module),
                      ctx,
-                     unquote(capture_shapes)
+                     unquote(capture_shapes),
+                     locator: locator,
+                     range: {pos, new_pos}
                    ) do
-                {:ok, value, new_ctx} -> do_run_sequence(stream, new_pos, new_ctx, [value | acc])
-                {:error, _} = err -> err
+                {:ok, value, new_ctx} ->
+                  do_run_sequence(stream, new_pos, new_ctx, [value | acc], locator)
+
+                {:error, _} = err ->
+                  err
               end
 
             _fail ->
@@ -169,7 +199,9 @@ defmodule Grammar.Native do
     success =
       quote do
         {raw_captures, record} = Ichor.Syntax.Record.root(unquote(root), pos, raw_captures)
-        {:ok, Ichor.Syntax.tree(record, tokens, unquote(grammar.skip)), raw_captures}
+
+        {:ok, Ichor.Syntax.tree(record, tokens, unquote(grammar.skip)), raw_captures,
+         Grammar.Source.Locator.new(stream, input)}
       end
 
     RuleCompiler.compile(grammar, lossless: true) ++
@@ -179,7 +211,7 @@ defmodule Grammar.Native do
           @spec parse_lossless(String.t(), term()) ::
                   {:ok, Ichor.Syntax.Node.t()} | {:error, Ichor.Error.t()}
           def parse_lossless(input, context \\ nil) do
-            with {:ok, tree, _raw_captures} <- lossless_match(input, context) do
+            with {:ok, tree, _raw_captures, _locator} <- lossless_match(input, context) do
               {:ok, tree}
             end
           end
@@ -189,14 +221,15 @@ defmodule Grammar.Native do
                   {:ok, term(), Ichor.Syntax.Node.t()}
                   | {:error, Ichor.Error.t() | [Ichor.Error.t()]}
           def run_lossless(input, initial_context \\ nil) do
-            with {:ok, tree, raw_captures} <- lossless_match(input, initial_context),
+            with {:ok, tree, raw_captures, locator} <- lossless_match(input, initial_context),
                  {:ok, value, _context} <-
                    Ichor.Actions.evaluate(
                      unquote(root),
                      raw_captures,
                      unquote(actions_module),
                      initial_context,
-                     unquote(capture_shapes)
+                     unquote(capture_shapes),
+                     locator: locator
                    ) do
               {:ok, value, tree}
             end

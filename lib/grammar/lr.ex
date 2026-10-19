@@ -54,7 +54,7 @@ defmodule Grammar.LR do
           {:ok, non_neg_integer()} | {:error, Error.t() | [Error.t()]}
   def parse(%Aether.Grammar{} = grammar, input, context \\ nil) do
     with {:ok, lr} <- compile(grammar),
-         {:ok, pos, _raw_captures} <- match(lr, grammar, input, context) do
+         {:ok, pos, _raw_captures, _locator} <- match(lr, grammar, input, context) do
       {:ok, pos}
     end
   end
@@ -64,14 +64,15 @@ defmodule Grammar.LR do
           {:ok, term()} | {:error, Error.t() | [Error.t()]}
   def run(%Aether.Grammar{} = grammar, input, actions_module, initial_context \\ nil) do
     with {:ok, lr} <- compile(grammar),
-         {:ok, _pos, raw_captures} <- match(lr, grammar, input, initial_context),
+         {:ok, _pos, raw_captures, locator} <- match(lr, grammar, input, initial_context),
          {:ok, value, _context} <-
            Actions.evaluate(
              grammar.root,
              raw_captures,
              actions_module,
              initial_context,
-             lr.capture_shapes
+             lr.capture_shapes,
+             locator: locator
            ) do
       {:ok, value}
     end
@@ -87,7 +88,8 @@ defmodule Grammar.LR do
           {:ok, Ichor.Syntax.Node.t()} | {:error, Error.t() | [Error.t()]}
   def parse_lossless(%Aether.Grammar{} = grammar, input, context \\ nil) do
     with {:ok, compiled} <- compile(grammar),
-         {:ok, tree, _raw_captures} <- lossless_match(compiled, grammar, input, context) do
+         {:ok, tree, _raw_captures, _locator} <-
+           lossless_match(compiled, grammar, input, context) do
       {:ok, tree}
     end
   end
@@ -152,7 +154,7 @@ defmodule Grammar.LR do
 
       case run_shift_reduce(table, stream) do
         {:error, error} -> {:error, Grammar.Source.placed(error, input)}
-        matched -> matched
+        {:ok, pos, captures} -> {:ok, pos, captures, Grammar.Source.Locator.new(stream, input)}
       end
     end
   end

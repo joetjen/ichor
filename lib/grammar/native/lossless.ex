@@ -33,7 +33,7 @@ defmodule Grammar.Native.Lossless do
       @spec parse_lossless(String.t(), term()) ::
               {:ok, Ichor.Syntax.Node.t()} | {:error, Ichor.Error.t()}
       def parse_lossless(input, context \\ nil) do
-        with {:ok, tree, _raw_captures} <- lossless_match(input, context) do
+        with {:ok, tree, _raw_captures, _locator} <- lossless_match(input, context) do
           {:ok, tree}
         end
       end
@@ -43,14 +43,15 @@ defmodule Grammar.Native.Lossless do
               {:ok, term(), Ichor.Syntax.Node.t()}
               | {:error, Ichor.Error.t() | [Ichor.Error.t()]}
       def run_lossless(input, initial_context \\ nil) do
-        with {:ok, tree, raw_captures} <- lossless_match(input, initial_context),
+        with {:ok, tree, raw_captures, locator} <- lossless_match(input, initial_context),
              {:ok, value, _context} <-
                Ichor.Actions.evaluate(
                  unquote(root),
                  raw_captures,
                  unquote(actions_module),
                  initial_context,
-                 unquote(capture_shapes)
+                 unquote(capture_shapes),
+                 locator: locator
                ) do
           {:ok, value, tree}
         end
@@ -66,7 +67,8 @@ defmodule Grammar.Native.Lossless do
 
             {:ok, pos, raw_captures} ->
               {raw_captures, record} = Ichor.Syntax.Record.root(unquote(root), pos, raw_captures)
-              {:ok, Ichor.Syntax.tree(record, tokens, unquote(skip)), raw_captures}
+              locator = Grammar.Source.Locator.new(unquote(stream), input)
+              {:ok, Ichor.Syntax.tree(record, tokens, unquote(skip)), raw_captures, locator}
           end
         end
       end
