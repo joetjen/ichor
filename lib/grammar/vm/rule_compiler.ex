@@ -161,7 +161,7 @@ defmodule Grammar.VM.RuleCompiler do
     # A reference the capture owns (`name:X?`, `name:X*`) is captured
     # under `name` only -- never under its own name too -- so there is
     # nothing of `X`'s to be repeatable. Anything else inside is.
-    if owned_ref(inner, anon), do: acc, else: repeatable_names(inner, rep?, anon, acc)
+    if owned_ref(inner, anon) == :none, do: repeatable_names(inner, rep?, anon, acc), else: acc
   end
 
   defp repeatable_names(%IR.RuleRef{name: name}, rep?, anon, acc) do
@@ -214,8 +214,8 @@ defmodule Grammar.VM.RuleCompiler do
     owned = owned_ref(inner, anon_tokens)
 
     inner_leaf = fn
-      %IR.RuleRef{name: ^owned}, counter when not is_nil(owned) ->
-        {captured_ref(nil, owned, token_names), counter}
+      %IR.RuleRef{name: name}, counter when owned == {:ok, name} ->
+        {captured_ref(owned_name(), name, token_names), counter}
 
       ir, counter ->
         leaf(ir, counter, token_names, anon_tokens)
@@ -236,7 +236,9 @@ defmodule Grammar.VM.RuleCompiler do
   end
 
   @doc """
-  The reference a capture's expression directly wraps, or nil.
+  The reference a capture's expression directly wraps, as `{:ok, name}`,
+  or `:none`. Tagged rather than nil-or-name: a rule named `nil` is
+  the atom nil, and must be ownable like any other.
 
   `X` for `X?`, `X*`, `X+` or `X{n,m}`, however nested: every reference
   in the expression that would be implicitly captured names the same
@@ -250,13 +252,25 @@ defmodule Grammar.VM.RuleCompiler do
 
   Shared by every backend, so the engines agree on what a capture owns.
   """
-  @spec owned_ref(IR.expr(), MapSet.t(atom())) :: atom() | nil
+  @spec owned_ref(IR.expr(), MapSet.t(atom())) :: {:ok, atom()} | :none
   def owned_ref(ir, excluded) do
     case referenced(ir, excluded, MapSet.new()) do
-      :captures -> nil
-      names -> if MapSet.size(names) == 1, do: Enum.at(names, 0), else: nil
+      :captures -> :none
+      names -> if MapSet.size(names) == 1, do: {:ok, Enum.at(names, 0)}, else: :none
     end
   end
+
+  @doc """
+  The capture name an owned reference is matched under: kept under no
+  name at all (`Grammar.VM.TokenInterpreter`), but in a lossless program
+  still recorded.
+
+  **Not nil**, which is what a rule named `nil` captures under -- that
+  atom *is* nil -- and reserved: `$` is not a name character in any
+  grammar notation Ichor reads.
+  """
+  @spec owned_name() :: atom()
+  def owned_name, do: :"$owned"
 
   defp referenced(_ir, _excluded, :captures), do: :captures
   defp referenced(%IR.Capture{}, _excluded, _names), do: :captures

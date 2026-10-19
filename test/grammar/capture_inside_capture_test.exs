@@ -92,6 +92,26 @@ defmodule Grammar.CaptureInsideCaptureTest do
                  {:ok, %{many: {:text, "aa"}}}
       end
 
+      # A rule named `nil` is the atom nil: neither "owns nothing" nor
+      # "kept under no name" may be spelled with it.
+      test "a rule named nil is captured under its own name like any other" do
+        rules = "r := v:value\nvalue := nil | B\nnil := A\n"
+
+        assert run(unquote(engine), unquote(backend), unquote(mode), rules, "a") ==
+                 {:ok, %{v: {:rule, :value, [{nil, {:rule, nil, [A: {:token, :A, "a"}]}}]}}}
+      end
+
+      test "and a capture owns it as it owns any other" do
+        assert run(
+                 unquote(engine),
+                 unquote(backend),
+                 unquote(mode),
+                 "r := x:nil?\nnil := A\n",
+                 "a"
+               ) ==
+                 {:ok, %{x: {:text, "a"}}}
+      end
+
       test "a group captured under a name keeps the captures inside it" do
         assert run(unquote(engine), unquote(backend), unquote(mode), "r := all:(k:A B)\n", "ab") ==
                  {:ok, %{all: {:text, "ab"}, k: {:token, :A, "a"}, B: {:token, :B, "b"}}}
