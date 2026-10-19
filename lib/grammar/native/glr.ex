@@ -20,19 +20,31 @@ defmodule Grammar.Native.GLR do
   alias Grammar.Native.TokenizerCompiler
   alias Ichor.Toolkit.Codegen
 
-  @doc "Generates the full quoted body (lexer + compiled GLR action/goto lookup + `parse/1,2` + `run/1,2`) for `grammar`, dispatching to `actions_module`."
-  @spec generate(Aether.Grammar.t(), module()) :: Macro.t()
-  def generate(%Aether.Grammar{engine: :glr} = grammar, actions_module) do
+  @doc """
+  Generates the full quoted body (lexer + compiled GLR action/goto lookup
+  + `parse/1,2` + `run/1,2`) for `grammar`, dispatching to
+  `actions_module`.
+
+  `lossless: true` adds `parse_lossless/1,2` and `run_lossless/1,2`
+  (`Grammar.Native.Lossless`): the same run over the same compiled
+  lookups, building with `Ichor.Syntax.Record.reduced/3`.
+  """
+  @spec generate(Aether.Grammar.t(), module(), keyword()) :: Macro.t()
+  def generate(grammar, actions_module, opts \\ [])
+
+  def generate(%Aether.Grammar{engine: :glr} = grammar, actions_module, opts) do
     case Builder.build(grammar) do
       {:error, errors} ->
         raise CompileError, description: Enum.map_join(errors, "\n", &Ichor.Error.format/1)
 
       {:ok, table} ->
-        do_generate(grammar, table, actions_module)
+        grammar
+        |> do_generate(table, actions_module)
+        |> with_lossless(grammar, table, actions_module, opts[:lossless])
     end
   end
 
-  def generate(%Aether.Grammar{engine: engine}, _actions_module) do
+  def generate(%Aether.Grammar{engine: engine}, _actions_module, _opts) do
     raise CompileError,
       description:
         "this grammar is tagged @engine #{engine} -- Grammar.Native.GLR only compiles @engine glr grammars"
@@ -126,6 +138,29 @@ defmodule Grammar.Native.GLR do
   # conflicts and forks over every action in it) -- plus a fallback
   # (`[]`, no action) for anything else, matching the interpreted path's
   # own `Map.get(..., [])` default.
+  defp with_lossless(body, _grammar, _table, _actions_module, lossless) when lossless != true,
+    do: body
+
+  defp with_lossless(body, grammar, table, actions_module, true) do
+    run =
+      quote do
+        Grammar.GLR.Runtime.run(
+          &glr_action/2,
+          &glr_goto/2,
+          unquote(Macro.escape(table.productions)),
+          unquote(table.start_state),
+          unquote(table.end_symbol),
+          unquote(Grammar.Native.Lossless.stream_var()),
+          &Ichor.Syntax.Record.reduced/3
+        )
+      end
+
+    quote do
+      unquote(body)
+      unquote(Grammar.Native.Lossless.shift_reduce_defs(grammar, actions_module, run))
+    end
+  end
+
   defp generate_action_defs(table) do
     clauses =
       for {state, cells} <- table.action, {symbol, actions} <- cells do

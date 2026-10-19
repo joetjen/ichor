@@ -38,6 +38,7 @@ defmodule Grammar.VM.TokenInterpreter do
 
   alias Grammar.VM.Token
   alias Ichor.Capture
+  alias Ichor.Syntax.Record
 
   @type raw_capture :: Capture.node_t()
 
@@ -115,8 +116,10 @@ defmodule Grammar.VM.TokenInterpreter do
 
       {:cap_end, name} ->
         [{^name, kind, ref_name, start_pos} | rest_pending] = frame.pending
-        raw = build_raw_capture(kind, ref_name, stream, start_pos, pos, last_result)
-        captures = merge_capture(frame.captures, name, raw)
+
+        captures =
+          captured(frame.captures, name, kind, ref_name, stream, start_pos, pos, last_result)
+
         new_frame = %{frame | pending: rest_pending, captures: captures}
 
         loop(
@@ -349,17 +352,42 @@ defmodule Grammar.VM.TokenInterpreter do
     end
   end
 
+  # A `@native(...)` rule's code is handed ordinary captures, whatever
+  # program called it: the rules it matches are not nodes of a lossless
+  # tree, and their tokens fall to the node of the rule that called it.
+  defp without_records(captures), do: captures |> Record.take() |> elem(1)
+
   defp build_rule_matchers(instrs, dep_entries, context) do
     Map.new(dep_entries, fn {name, entry} ->
       {name,
        fn stream, pos ->
          case run_from(instrs, entry, stream, pos, context) do
-           {:ok, new_pos, caps} -> {:ok, new_pos, {:rule, name, caps}}
+           {:ok, new_pos, caps} -> {:ok, new_pos, {:rule, name, without_records(caps)}}
            :fail -> :fail
          end
        end}
     end)
   end
+
+  # A finished capture, merged into the frame's. `:lossless_rule` is a
+  # rule call in a lossless program (`Grammar.VM.parse_lossless/3`): the
+  # ordinary `{:rule, ...}` capture, without the callee's records, and
+  # the call's own record beside it, under `Ichor.Syntax.Record.key/0`.
+  defp captured(captures, name, :lossless_rule, ref_name, _stream, start_pos, pos, last_result) do
+    {sub_captures, record} = Record.called(ref_name, start_pos, pos, last_result)
+
+    captures
+    |> merge_capture(name, {:rule, ref_name, sub_captures})
+    |> merge_capture(Record.key(), record)
+  end
+
+  defp captured(captures, name, kind, ref_name, stream, start_pos, pos, last_result),
+    do:
+      merge_capture(
+        captures,
+        name,
+        build_raw_capture(kind, ref_name, stream, start_pos, pos, last_result)
+      )
 
   # A `Grammar.IR.CustomLexeme`-matched token can carry its own capture
   # override (a string-interpolation token's embedded expressions, say)

@@ -52,6 +52,50 @@ defmodule Mix.Tasks.Ichor.GenTest do
     assert module.run("2+3*4") == {:ok, 14}
   end
 
+  describe "--lossless" do
+    for {engine, grammar, input} <- [
+          {"peg", "4.1 calculator", "2 + 3 * 4"},
+          {"lr", "test/lr_calculator/lr_calculator.aether", "2+3*4"}
+        ] do
+      test "writes a #{engine} module with the lossless parser beside the ordinary one", %{
+        tmp_dir: tmp_dir
+      } do
+        grammar_path =
+          if unquote(engine) == "peg",
+            do: write_grammar(tmp_dir, Support.ExampleGrammars.all()[unquote(grammar)]),
+            else: unquote(grammar)
+
+        out_path = Path.join(tmp_dir, "gen_lossless.ex")
+        module = unique_module("GenLossless")
+
+        actions =
+          if unquote(engine) == "peg", do: "Calculator.Actions", else: "LrCalculator.Actions"
+
+        capture_io(fn ->
+          Mix.Tasks.Ichor.Gen.run([
+            grammar_path,
+            "--module",
+            inspect(module),
+            "--actions",
+            actions,
+            "--out",
+            out_path,
+            "--lossless"
+          ])
+        end)
+
+        assert File.read!(out_path) =~ "--out #{out_path} --lossless\n"
+
+        [{^module, _}] = Code.compile_file(out_path)
+        input = unquote(input)
+
+        assert {:ok, 14, tree} = module.run_lossless(input)
+        assert Ichor.Syntax.text(tree) == input
+        assert module.run(input) == {:ok, 14}
+      end
+    end
+  end
+
   test "creates intermediate directories for --out", %{tmp_dir: tmp_dir} do
     grammar_path = write_grammar(tmp_dir, Support.ExampleGrammars.all()["4.1 calculator"])
     out_path = Path.join([tmp_dir, "nested", "dir", "gen.ex"])

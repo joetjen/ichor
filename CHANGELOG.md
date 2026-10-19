@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The lossless mode** (`design/lossless-mode.md`): a parser generated
+  with `lossless: true` (`use Ichor`, `Ichor.generate/4`,
+  `Ichor.generate_from_grammar/3`) or `mix ichor.gen --lossless` gains
+  `parse_lossless/1,2` and `run_lossless/1,2`. They return the lossless
+  tree of an input (`Ichor.Syntax`, in `ichor_runtime`): every byte,
+  trivia and punctuation included, under every grammar rule that
+  matched, with byte offsets, lines and columns; `run_lossless` returns
+  the ordinary value beside it. For every engine and both backends --
+  `Grammar.VM`, `Grammar.LR` and `Grammar.GLR` have `parse_lossless/3`
+  and `run_lossless/4` -- and the same tree from each. Without the
+  option, the generated code is what it was; with it, only the module
+  grows.
+
+### Fixed
+
+- **An LR or GLR rule repeated three times or more is a flat list**
+  (through `ichor_runtime` 0.4.0): `doc := entry+` with three entries
+  gave `[a, [b, c]]`, which `Ichor.Actions` could not evaluate.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added

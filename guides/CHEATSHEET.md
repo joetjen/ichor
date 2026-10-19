@@ -42,6 +42,13 @@ inside a macro expansion on every compile — writes a plain, ordinary
 functions `use Ichor` would generate. Rerun by hand whenever the grammar
 changes; no automatic staleness check.
 
+Add `--lossless` (`lossless: true` for `use Ichor`) for
+`parse_lossless/1,2` and `run_lossless/1,2` too: the lossless tree of an
+input (`Ichor.Syntax`) -- every byte, trivia and punctuation included,
+under every rule that matched -- and, from `run_lossless`, the ordinary
+value beside it. The ordinary functions are unchanged; the module grows.
+See [Tutorial §10](TUTORIAL.md#10-keeping-every-byte-the-lossless-mode).
+
 `PATH_TO_GRAMMAR` doesn't have to be `.aether` source — ABNF, BNF, ISO
 EBNF, and PEG grammars work too (via `Ichor.GrammarImport`), the style
 picked automatically from the extension, or overridden with an
@@ -73,8 +80,8 @@ dependency:
 ```elixir
 def deps do
   [
-    {:ichor_runtime, "~> 0.3"},
-    {:ichor, "~> 0.4", only: :dev, runtime: false}
+    {:ichor_runtime, "~> 0.4"},
+    {:ichor, "~> 0.5", only: :dev, runtime: false}
   ]
 end
 ```
