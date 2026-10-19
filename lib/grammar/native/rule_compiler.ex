@@ -28,16 +28,29 @@ defmodule Grammar.Native.RuleCompiler do
   alias Grammar.VM.RuleCompiler, as: VMRuleCompiler
   alias Ichor.Toolkit.Codegen
 
-  @doc "Compiles every rule into a list of quoted `defp` definitions, one named `rule_fn_name/1` per rule plus one per anonymous sub-expression."
-  @spec compile(Aether.Grammar.t()) :: [Macro.t()]
-  def compile(grammar) do
-    token_names = VMRuleCompiler.token_names(grammar)
-    anon_tokens = VMRuleCompiler.implicit_capture_exclusions(grammar)
+  @doc """
+  Compiles every rule into a list of quoted `defp` definitions, one named
+  `rule_fn_name/1` per rule plus one per anonymous sub-expression.
+
+  With `lossless: true`, the second set a lossless parser runs instead
+  (`lossless_rule_fn_name/1`, `design/lossless-mode.md`): the same
+  functions under their own names, but every rule call also records
+  itself for `Ichor.Syntax`, under `Ichor.Syntax.Record.key/0`. A set
+  of its own rather than a flag in the one set, so the ordinary
+  parser's functions are exactly what they were, and nothing on its path
+  checks which mode it is in.
+  """
+  @spec compile(Aether.Grammar.t(), keyword()) :: [Macro.t()]
+  def compile(grammar, opts \\ []) do
+    env = %{
+      token_names: VMRuleCompiler.token_names(grammar),
+      anon_tokens: VMRuleCompiler.implicit_capture_exclusions(grammar),
+      lossless: Keyword.get(opts, :lossless, false)
+    }
 
     {defs, _counter} =
       Enum.reduce(grammar.rules, {[], 0}, fn {name, ir}, {acc, counter} ->
-        {sub_defs, counter} =
-          compile_expr(ir, counter, token_names, anon_tokens, rule_fn_name(name))
+        {sub_defs, counter} = compile_expr(ir, counter, env, fn_name(name, env))
 
         {acc ++ sub_defs, counter}
       end)
@@ -49,9 +62,23 @@ defmodule Grammar.Native.RuleCompiler do
   @spec rule_fn_name(atom()) :: atom()
   def rule_fn_name(name), do: :"parse_rule__#{name}"
 
-  defp fresh_name(counter), do: Codegen.fresh("parse_expr__", counter)
+  @doc "The lossless set's function for a rule (`compile/2` with `lossless: true`)."
+  @spec lossless_rule_fn_name(atom()) :: atom()
+  def lossless_rule_fn_name(name), do: :"lossless_rule__#{name}"
 
-  @spec compile_expr(IR.expr(), non_neg_integer(), MapSet.t(), MapSet.t(), atom() | nil) ::
+  # Every name a set calls is its own set's: a lossless function never
+  # calls an ordinary one, nor the other way round.
+  defp fn_name(name, %{lossless: false}), do: rule_fn_name(name)
+  defp fn_name(name, %{lossless: true}), do: lossless_rule_fn_name(name)
+
+  defp fresh_name(counter, %{lossless: false}), do: Codegen.fresh("parse_expr__", counter)
+  defp fresh_name(counter, %{lossless: true}), do: Codegen.fresh("lossless_expr__", counter)
+
+  # `env` is what every clause needs to know of the grammar and the set
+  # being compiled: `token_names`, `anon_tokens` and `lossless`.
+  @typep env :: %{token_names: MapSet.t(), anon_tokens: MapSet.t(), lossless: boolean()}
+
+  @spec compile_expr(IR.expr(), non_neg_integer(), env(), atom() | nil) ::
           {[Macro.t()], non_neg_integer()}
 
   # ---- leaves: RuleRef/Capture/Indent/Custom (rule-level only) ----------
@@ -59,17 +86,16 @@ defmodule Grammar.Native.RuleCompiler do
   defp compile_expr(
          %IR.RuleRef{name: ref_name},
          counter,
-         token_names,
-         anon_tokens,
+         env,
          preferred_name
        ) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
 
     def_ =
-      if MapSet.member?(anon_tokens, ref_name) do
+      if MapSet.member?(env.anon_tokens, ref_name) do
         bare_token_def(name, ref_name)
       else
-        captured_ref_def(name, ref_name, ref_name, token_names)
+        captured_ref_def(name, ref_name, ref_name, env)
       end
 
     {[def_], counter}
@@ -78,12 +104,11 @@ defmodule Grammar.Native.RuleCompiler do
   defp compile_expr(
          %IR.Capture{name: cap_name, expr: %IR.RuleRef{name: ref_name}},
          counter,
-         token_names,
-         _anon_tokens,
+         env,
          preferred_name
        ) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
-    {[captured_ref_def(name, cap_name, ref_name, token_names)], counter}
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
+    {[captured_ref_def(name, cap_name, ref_name, env)], counter}
   end
 
   # `@native(...)`, bare or explicitly captured: like a bare `RuleRef`'s
@@ -92,34 +117,31 @@ defmodule Grammar.Native.RuleCompiler do
   defp compile_expr(
          %IR.Capture{name: cap_name, expr: %IR.Custom{} = custom},
          counter,
-         _token_names,
-         _anon_tokens,
+         env,
          preferred_name
        ) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
     {[custom_def(name, cap_name, custom)], counter}
   end
 
   defp compile_expr(
          %IR.Custom{function: function} = custom,
          counter,
-         _token_names,
-         _anon_tokens,
+         env,
          preferred_name
        ) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
     {[custom_def(name, function, custom)], counter}
   end
 
   defp compile_expr(
          %IR.Capture{name: cap_name, expr: inner},
          counter,
-         token_names,
-         anon_tokens,
+         env,
          preferred_name
        ) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
-    {inner_name, inner_defs, counter} = compile_one(inner, counter, token_names, anon_tokens)
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
+    {inner_name, inner_defs, counter} = compile_one(inner, counter, env)
 
     %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
       Codegen.vars([:stream, :pos, :ref_stack, :context])
@@ -156,12 +178,11 @@ defmodule Grammar.Native.RuleCompiler do
   defp compile_expr(
          %IR.Indent{expr: e, kind: :indent},
          counter,
-         token_names,
-         anon_tokens,
+         env,
          preferred_name
        ) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
-    {inner_name, inner_defs, counter} = compile_one(e, counter, token_names, anon_tokens)
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
+    {inner_name, inner_defs, counter} = compile_one(e, counter, env)
 
     %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
       Codegen.vars([:stream, :pos, :ref_stack, :context])
@@ -185,12 +206,11 @@ defmodule Grammar.Native.RuleCompiler do
   defp compile_expr(
          %IR.Indent{expr: e, kind: :samecol},
          counter,
-         token_names,
-         anon_tokens,
+         env,
          preferred_name
        ) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
-    {inner_name, inner_defs, counter} = compile_one(e, counter, token_names, anon_tokens)
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
+    {inner_name, inner_defs, counter} = compile_one(e, counter, env)
 
     %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
       Codegen.vars([:stream, :pos, :ref_stack, :context])
@@ -213,9 +233,9 @@ defmodule Grammar.Native.RuleCompiler do
 
   # ---- combinators (shared shape with the char level) -------------------
 
-  defp compile_expr(%IR.Seq{exprs: exprs}, counter, token_names, anon_tokens, preferred_name) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
-    {sub_names, sub_defs, counter} = compile_all(exprs, counter, token_names, anon_tokens)
+  defp compile_expr(%IR.Seq{exprs: exprs}, counter, env, preferred_name) do
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
+    {sub_names, sub_defs, counter} = compile_all(exprs, counter, env)
 
     %{stream: stream, pos: pos0, ref_stack: ref0, context: context} =
       Codegen.vars([:stream, :pos, :ref_stack, :context])
@@ -262,12 +282,12 @@ defmodule Grammar.Native.RuleCompiler do
     {sub_defs ++ [def_], counter}
   end
 
-  defp compile_expr(%IR.Choice{exprs: [only]}, counter, token_names, anon_tokens, preferred_name),
-    do: compile_expr(only, counter, token_names, anon_tokens, preferred_name)
+  defp compile_expr(%IR.Choice{exprs: [only]}, counter, env, preferred_name),
+    do: compile_expr(only, counter, env, preferred_name)
 
-  defp compile_expr(%IR.Choice{exprs: exprs}, counter, token_names, anon_tokens, preferred_name) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
-    {sub_names, sub_defs, counter} = compile_all(exprs, counter, token_names, anon_tokens)
+  defp compile_expr(%IR.Choice{exprs: exprs}, counter, env, preferred_name) do
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
+    {sub_names, sub_defs, counter} = compile_all(exprs, counter, env)
 
     %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
       Codegen.vars([:stream, :pos, :ref_stack, :context])
@@ -290,35 +310,34 @@ defmodule Grammar.Native.RuleCompiler do
     {sub_defs ++ [def_], counter}
   end
 
-  defp compile_expr(%IR.Star{expr: e}, counter, token_names, anon_tokens, preferred_name) do
-    unary_combinator(:star, e, counter, token_names, anon_tokens, preferred_name)
+  defp compile_expr(%IR.Star{expr: e}, counter, env, preferred_name) do
+    unary_combinator(:star, e, counter, env, preferred_name)
   end
 
-  defp compile_expr(%IR.Plus{expr: e}, counter, token_names, anon_tokens, preferred_name) do
-    unary_combinator(:plus, e, counter, token_names, anon_tokens, preferred_name)
+  defp compile_expr(%IR.Plus{expr: e}, counter, env, preferred_name) do
+    unary_combinator(:plus, e, counter, env, preferred_name)
   end
 
-  defp compile_expr(%IR.Opt{expr: e}, counter, token_names, anon_tokens, preferred_name) do
-    unary_combinator(:opt, e, counter, token_names, anon_tokens, preferred_name)
+  defp compile_expr(%IR.Opt{expr: e}, counter, env, preferred_name) do
+    unary_combinator(:opt, e, counter, env, preferred_name)
   end
 
-  defp compile_expr(%IR.AndPred{expr: e}, counter, token_names, anon_tokens, preferred_name) do
-    unary_combinator(:and_pred, e, counter, token_names, anon_tokens, preferred_name)
+  defp compile_expr(%IR.AndPred{expr: e}, counter, env, preferred_name) do
+    unary_combinator(:and_pred, e, counter, env, preferred_name)
   end
 
-  defp compile_expr(%IR.NotPred{expr: e}, counter, token_names, anon_tokens, preferred_name) do
-    unary_combinator(:not_pred, e, counter, token_names, anon_tokens, preferred_name)
+  defp compile_expr(%IR.NotPred{expr: e}, counter, env, preferred_name) do
+    unary_combinator(:not_pred, e, counter, env, preferred_name)
   end
 
   defp compile_expr(
          %IR.Rep{expr: e, min: min, max: max},
          counter,
-         token_names,
-         anon_tokens,
+         env,
          preferred_name
        ) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
-    {inner_name, inner_defs, counter} = compile_one(e, counter, token_names, anon_tokens)
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
+    {inner_name, inner_defs, counter} = compile_one(e, counter, env)
 
     %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
       Codegen.vars([:stream, :pos, :ref_stack, :context])
@@ -359,12 +378,12 @@ defmodule Grammar.Native.RuleCompiler do
     end
   end
 
-  defp captured_ref_def(name, cap_name, ref_name, token_names) do
+  defp captured_ref_def(name, cap_name, ref_name, env) do
     stream = Macro.var(:stream, nil)
     pos = Macro.var(:pos, nil)
     ref_stack = Macro.var(:ref_stack, nil)
 
-    if MapSet.member?(token_names, ref_name) do
+    if MapSet.member?(env.token_names, ref_name) do
       context = Macro.var(:_context, nil)
 
       quote do
@@ -383,29 +402,74 @@ defmodule Grammar.Native.RuleCompiler do
         end
       end
     else
-      target = rule_fn_name(ref_name)
-      context = Macro.var(:context, nil)
+      rule_call_def(name, cap_name, ref_name, env)
+    end
+  end
 
-      quote do
-        defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
-          case unquote(target)(
-                 unquote(stream),
-                 unquote(pos),
-                 unquote(ref_stack),
-                 unquote(context)
-               ) do
-            {:ok, new_pos, new_ref_stack, sub_captures} ->
-              {:ok, new_pos, new_ref_stack,
-               [{unquote(cap_name), {:rule, unquote(ref_name), sub_captures}}]}
+  defp rule_call_def(name, cap_name, ref_name, %{lossless: false}) do
+    %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
 
-            _fail ->
-              :fail
-          end
+    target = rule_fn_name(ref_name)
+
+    quote do
+      defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+        case unquote(target)(
+               unquote(stream),
+               unquote(pos),
+               unquote(ref_stack),
+               unquote(context)
+             ) do
+          {:ok, new_pos, new_ref_stack, sub_captures} ->
+            {:ok, new_pos, new_ref_stack,
+             [{unquote(cap_name), {:rule, unquote(ref_name), sub_captures}}]}
+
+          _fail ->
+            :fail
         end
       end
     end
   end
 
+  # The lossless set's rule call: the ordinary `{:rule, ...}` capture,
+  # without the callee's records, and the call's own record beside it --
+  # holding those records, over the tokens `[pos, new_pos)` it matched.
+  defp rule_call_def(name, cap_name, ref_name, %{lossless: true}) do
+    %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
+
+    target = lossless_rule_fn_name(ref_name)
+
+    quote do
+      defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+        case unquote(target)(
+               unquote(stream),
+               unquote(pos),
+               unquote(ref_stack),
+               unquote(context)
+             ) do
+          {:ok, new_pos, new_ref_stack, sub_captures} ->
+            {sub_captures, record} =
+              Ichor.Syntax.Record.called(unquote(ref_name), unquote(pos), new_pos, sub_captures)
+
+            {:ok, new_pos, new_ref_stack,
+             [
+               {unquote(cap_name), {:rule, unquote(ref_name), sub_captures}},
+               {unquote(Ichor.Syntax.Record.key()), record}
+             ]}
+
+          _fail ->
+            :fail
+        end
+      end
+    end
+  end
+
+  # A `@native(...)` rule's matchers call the *ordinary* rule functions,
+  # in the lossless set too: the custom code is handed ordinary captures,
+  # the rules it matches are not nodes of a lossless tree, and their
+  # tokens fall to the node of the rule that called it -- as on the VM.
+  #
   # `rule_matchers` closures are 2-arity ((stream, pos) -> ...), per
   # `Ichor.CustomRule` -- each one closes over *this* call's own
   # `ref_stack`/`context` rather than taking them as extra arguments, so
@@ -451,9 +515,9 @@ defmodule Grammar.Native.RuleCompiler do
     end
   end
 
-  defp unary_combinator(kind, e, counter, token_names, anon_tokens, preferred_name) do
-    {name, counter} = name_or_fresh(preferred_name, counter)
-    {inner_name, inner_defs, counter} = compile_one(e, counter, token_names, anon_tokens)
+  defp unary_combinator(kind, e, counter, env, preferred_name) do
+    {name, counter} = name_or_fresh(preferred_name, counter, env)
+    {inner_name, inner_defs, counter} = compile_one(e, counter, env)
 
     %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
       Codegen.vars([:stream, :pos, :ref_stack, :context])
@@ -479,19 +543,19 @@ defmodule Grammar.Native.RuleCompiler do
   defp merge_all([first | rest]),
     do: quote(do: Parser.merge_captures(unquote(first), unquote(merge_all(rest))))
 
-  defp name_or_fresh(nil, counter), do: fresh_name(counter)
-  defp name_or_fresh(name, counter), do: {name, counter}
+  defp name_or_fresh(nil, counter, env), do: fresh_name(counter, env)
+  defp name_or_fresh(name, counter, _env), do: {name, counter}
 
-  defp compile_one(ir, counter, token_names, anon_tokens) do
-    {name, counter} = fresh_name(counter)
-    {defs, counter} = compile_expr(ir, counter, token_names, anon_tokens, name)
+  defp compile_one(ir, counter, env) do
+    {name, counter} = fresh_name(counter, env)
+    {defs, counter} = compile_expr(ir, counter, env, name)
     {name, defs, counter}
   end
 
-  defp compile_all(exprs, counter, token_names, anon_tokens) do
+  defp compile_all(exprs, counter, env) do
     {names, defs, counter} =
       Enum.reduce(exprs, {[], [], counter}, fn e, {names, defs, counter} ->
-        {name, sub_defs, counter} = compile_one(e, counter, token_names, anon_tokens)
+        {name, sub_defs, counter} = compile_one(e, counter, env)
         {names ++ [name], defs ++ sub_defs, counter}
       end)
 

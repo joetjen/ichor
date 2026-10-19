@@ -34,9 +34,19 @@ defmodule Grammar.Native.LR do
   alias Grammar.Native.TokenizerCompiler
   alias Ichor.Toolkit.Codegen
 
-  @doc "Generates the full quoted body (lexer + compiled LR parser + `parse/1,2` + `run/1,2`) for `grammar`, dispatching to `actions_module`."
-  @spec generate(Aether.Grammar.t(), module()) :: Macro.t()
-  def generate(%Aether.Grammar{engine: :lr} = grammar, actions_module) do
+  @doc """
+  Generates the full quoted body (lexer + compiled LR parser + `parse/1,2`
+  + `run/1,2`) for `grammar`, dispatching to `actions_module`.
+
+  `lossless: true` adds `parse_lossless/1,2` and `run_lossless/1,2`
+  (`Grammar.Native.Lossless`): the table embedded as lookup functions,
+  run by `Grammar.LR.Lossless`. The compiled state functions are left
+  exactly as they are.
+  """
+  @spec generate(Aether.Grammar.t(), module(), keyword()) :: Macro.t()
+  def generate(grammar, actions_module, opts \\ [])
+
+  def generate(%Aether.Grammar{engine: :lr} = grammar, actions_module, opts) do
     case Builder.build(grammar) do
       {:error, errors} ->
         raise CompileError, description: Enum.map_join(errors, "\n", &Ichor.Error.format/1)
@@ -44,7 +54,9 @@ defmodule Grammar.Native.LR do
       {:ok, table} ->
         case Builder.conflicts(table) do
           [] ->
-            do_generate(grammar, table, actions_module)
+            grammar
+            |> do_generate(table, actions_module)
+            |> with_lossless(grammar, table, actions_module, opts[:lossless])
 
           conflicts ->
             details =
@@ -59,7 +71,7 @@ defmodule Grammar.Native.LR do
     end
   end
 
-  def generate(%Aether.Grammar{engine: engine}, _actions_module) do
+  def generate(%Aether.Grammar{engine: engine}, _actions_module, _opts) do
     raise CompileError,
       description:
         "this grammar is tagged @engine #{engine} -- Grammar.Native.LR only compiles @engine lr grammars"
@@ -143,6 +155,29 @@ defmodule Grammar.Native.LR do
           {:ok, value}
         end
       end
+    end
+  end
+
+  defp with_lossless(body, _grammar, _table, _actions_module, lossless) when lossless != true,
+    do: body
+
+  defp with_lossless(body, grammar, table, actions_module, true) do
+    run =
+      quote do
+        Grammar.LR.Lossless.run(
+          &lossless_lr_action/2,
+          fn state, nonterminal -> lr_goto(nonterminal, state) end,
+          unquote(Macro.escape(table.productions)),
+          unquote(table.start_state),
+          unquote(table.end_symbol),
+          unquote(Grammar.Native.Lossless.stream_var())
+        )
+      end
+
+    quote do
+      unquote(body)
+      unquote_splicing(Grammar.Native.Lossless.action_defs(table, :lossless_lr_action))
+      unquote(Grammar.Native.Lossless.shift_reduce_defs(grammar, actions_module, run))
     end
   end
 
