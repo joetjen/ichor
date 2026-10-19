@@ -13,7 +13,9 @@ defmodule Grammar.Native.RuleCompiler do
   `raw_captures` is exactly the ordered-list shape `Ichor.Actions`
   expects (`{:token, name, text}` / `{:rule, name, sub_captures}` /
   `{:text, text}` values, keyed by name, in first-occurrence RHS
-  order -- see `t:Ichor.Capture.raw_captures/0`). `context` is read-only,
+  order -- see `t:Ichor.Capture.raw_captures/0`), each value recording
+  the tokens `[pos, new_pos)` it matched (`Ichor.Capture.at/3`), so an
+  action's error can say where. `context` is read-only,
   threaded through purely so a
   `Grammar.IR.Custom` `@native(...)` leaf can hand it to
   `c:Ichor.CustomRule.match/4` -- nothing else in this module ever reads
@@ -159,7 +161,9 @@ defmodule Grammar.Native.RuleCompiler do
               text = Parser.concat_text(unquote(stream), unquote(pos), new_pos)
 
               {:ok, new_pos, new_ref_stack,
-               Parser.merge_captures(inner_caps, [{unquote(cap_name), {:text, text}}])}
+               Parser.merge_captures(inner_caps, [
+                 {unquote(cap_name), Ichor.Capture.at({:text, text}, unquote(pos), new_pos)}
+               ])}
 
             # A wildcard, not a literal `:fail` pattern: when the compiler
             # can prove `inner_name`'s generated function always succeeds
@@ -391,10 +395,14 @@ defmodule Grammar.Native.RuleCompiler do
           case Parser.match_token(unquote(stream), unquote(pos), unquote(ref_name)) do
             {:ok, new_pos, text, nil} ->
               {:ok, new_pos, unquote(ref_stack),
-               [{unquote(cap_name), {:token, unquote(ref_name), text}}]}
+               [
+                 {unquote(cap_name),
+                  Ichor.Capture.at({:token, unquote(ref_name), text}, unquote(pos), new_pos)}
+               ]}
 
             {:ok, new_pos, _text, capture} ->
-              {:ok, new_pos, unquote(ref_stack), [{unquote(cap_name), capture}]}
+              {:ok, new_pos, unquote(ref_stack),
+               [{unquote(cap_name), Ichor.Capture.at(capture, unquote(pos), new_pos)}]}
 
             :fail ->
               :fail
@@ -422,7 +430,10 @@ defmodule Grammar.Native.RuleCompiler do
              ) do
           {:ok, new_pos, new_ref_stack, sub_captures} ->
             {:ok, new_pos, new_ref_stack,
-             [{unquote(cap_name), {:rule, unquote(ref_name), sub_captures}}]}
+             [
+               {unquote(cap_name),
+                Ichor.Capture.at({:rule, unquote(ref_name), sub_captures}, unquote(pos), new_pos)}
+             ]}
 
           _fail ->
             :fail
@@ -454,7 +465,8 @@ defmodule Grammar.Native.RuleCompiler do
 
             {:ok, new_pos, new_ref_stack,
              [
-               {unquote(cap_name), {:rule, unquote(ref_name), sub_captures}},
+               {unquote(cap_name),
+                Ichor.Capture.at({:rule, unquote(ref_name), sub_captures}, unquote(pos), new_pos)},
                {unquote(Ichor.Syntax.Record.key()), record}
              ]}
 
@@ -488,8 +500,11 @@ defmodule Grammar.Native.RuleCompiler do
           {unquote(dep),
            fn s, p ->
              case unquote(dep_fn)(s, p, unquote(ref_stack), unquote(context)) do
-               {:ok, new_pos, _ref_stack, caps} -> {:ok, new_pos, {:rule, unquote(dep), caps}}
-               :fail -> :fail
+               {:ok, new_pos, _ref_stack, caps} ->
+                 {:ok, new_pos, Ichor.Capture.plain({:rule, unquote(dep), caps})}
+
+               :fail ->
+                 :fail
              end
            end}
         end
@@ -506,7 +521,8 @@ defmodule Grammar.Native.RuleCompiler do
                rule_matchers
              ]) do
           {:ok, new_pos, capture} ->
-            {:ok, new_pos, unquote(ref_stack), [{unquote(cap_name), capture}]}
+            {:ok, new_pos, unquote(ref_stack),
+             [{unquote(cap_name), Ichor.Capture.at(capture, unquote(pos), new_pos)}]}
 
           :fail ->
             :fail

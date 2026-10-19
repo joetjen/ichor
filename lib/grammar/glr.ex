@@ -54,7 +54,7 @@ defmodule Grammar.GLR do
           {:ok, non_neg_integer()} | {:error, Error.t() | [Error.t()]}
   def parse(%Aether.Grammar{} = grammar, input, context \\ nil) do
     with {:ok, glr} <- compile(grammar),
-         {:ok, pos, _raw_captures} <- match(glr, grammar, input, context) do
+         {:ok, pos, _raw_captures, _locator} <- match(glr, grammar, input, context) do
       {:ok, pos}
     end
   end
@@ -64,14 +64,15 @@ defmodule Grammar.GLR do
           {:ok, term()} | {:error, Error.t() | [Error.t()]}
   def run(%Aether.Grammar{} = grammar, input, actions_module, initial_context \\ nil) do
     with {:ok, glr} <- compile(grammar),
-         {:ok, _pos, raw_captures} <- match(glr, grammar, input, initial_context),
+         {:ok, _pos, raw_captures, locator} <- match(glr, grammar, input, initial_context),
          {:ok, value, _context} <-
            Actions.evaluate(
              grammar.root,
              raw_captures,
              actions_module,
              initial_context,
-             glr.capture_shapes
+             glr.capture_shapes,
+             locator: locator
            ) do
       {:ok, value}
     end
@@ -89,7 +90,8 @@ defmodule Grammar.GLR do
           {:ok, Ichor.Syntax.Node.t()} | {:error, Error.t() | [Error.t()]}
   def parse_lossless(%Aether.Grammar{} = grammar, input, context \\ nil) do
     with {:ok, compiled} <- compile(grammar),
-         {:ok, tree, _raw_captures} <- lossless_match(compiled, grammar, input, context) do
+         {:ok, tree, _raw_captures, _locator} <-
+           lossless_match(compiled, grammar, input, context) do
       {:ok, tree}
     end
   end
@@ -156,14 +158,17 @@ defmodule Grammar.GLR do
 
       action_fn
       |> Runtime.run(goto_fn, table.productions, table.start_state, table.end_symbol, stream)
-      |> placed(input)
+      |> placed(stream, input)
     end
   end
 
   # The runtime builds "unexpected end of input" from the stream alone;
-  # here, where the input is, it gets its line and column.
-  defp placed({:error, error}, input), do: {:error, Grammar.Source.placed(error, input)}
-  defp placed(matched, _input), do: matched
+  # here, where the input is, it gets its line and column. A match gets
+  # the locator its captures' recorded positions are counted in.
+  defp placed({:error, error}, _stream, input), do: {:error, Grammar.Source.placed(error, input)}
+
+  defp placed({:ok, pos, raw_captures}, stream, input),
+    do: {:ok, pos, raw_captures, Grammar.Source.Locator.new(stream, input)}
 
   defp tokenize(grammar, input, context), do: Grammar.VM.tokenize(grammar, input, context)
 end

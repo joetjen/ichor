@@ -49,6 +49,18 @@ defmodule Grammar.TriviaAndPositionsTest do
     end
   end
 
+  # The value without the spans of its nodes: the same value, wherever
+  # in the input it was.
+  defp unplaced(%Ichor.Node{} = node),
+    do: %{node | span: nil, captures: Map.new(node.captures, fn {k, v} -> {k, unplaced(v)} end)}
+
+  defp unplaced(values) when is_list(values), do: Enum.map(values, &unplaced/1)
+
+  defp unplaced(value) when is_tuple(value),
+    do: value |> Tuple.to_list() |> unplaced() |> List.to_tuple()
+
+  defp unplaced(value), do: value
+
   defp place({:error, [error | _]}), do: place({:error, error})
   defp place({:error, error}), do: {error.stage, error.line, error.column}
 
@@ -63,8 +75,8 @@ defmodule Grammar.TriviaAndPositionsTest do
       end
 
       test "parses the same with space around it as without" do
-        assert run(unquote(engine), unquote(backend), "\n 1+2 ") ==
-                 run(unquote(engine), unquote(backend), "1+2")
+        assert unplaced(run(unquote(engine), unquote(backend), "\n 1+2 ")) ==
+                 unplaced(run(unquote(engine), unquote(backend), "1+2"))
       end
 
       test "places no input at the first line and column" do

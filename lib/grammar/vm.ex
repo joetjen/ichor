@@ -20,7 +20,7 @@ defmodule Grammar.VM do
   `parse/3` is a bare recognizer (does `grammar.root` match `input`, full
   stop) with no `Ichor.Actions` involved. `run/4` is the actions-aware
   entry point: it matches, then hands the raw capture tree to
-  `Ichor.Actions.evaluate/5` for a given Actions module and initial
+  `Ichor.Actions.evaluate/6` for a given Actions module and initial
   context, producing the grammar's actual result (a sandboxed program's
   value, a config map, ...) instead of just a yes/no. `run_sequence/4`
   is for a source that's a *sequence* of top-level matches against
@@ -36,7 +36,7 @@ defmodule Grammar.VM do
   `@native(...)` node, via `c:Ichor.CustomRule.match/4`, or a
   `Grammar.IR.CustomLexeme` one via `c:Ichor.CustomLexeme.scan/3`. Nothing
   else in `Grammar.VM.TokenInterpreter`/`Grammar.VM.Tokenizer` reads it; only
-  `Ichor.Actions.evaluate/5` ever produces a *new* one.
+  `Ichor.Actions.evaluate/6` ever produces a *new* one.
 
   One real gap for `CustomLexeme` specifically: `run_sequence/4`
   tokenizes the *entire* input once, up front, with only
@@ -51,6 +51,7 @@ defmodule Grammar.VM do
 
   alias Grammar.IR
   alias Grammar.VM.{CharCompiler, RuleCompiler, TokenInterpreter, Tokenizer}
+  alias Grammar.Source.Locator
   alias Ichor.{Actions, Error, Syntax}
   alias Ichor.Syntax.Record
 
@@ -63,7 +64,7 @@ defmodule Grammar.VM do
   @spec parse(Aether.Grammar.t(), String.t(), term()) ::
           {:ok, non_neg_integer()} | {:error, Error.t()}
   def parse(%Aether.Grammar{} = grammar, input, context \\ nil) do
-    with {:ok, pos, _raw_captures} <- match(grammar, input, context) do
+    with {:ok, pos, _raw_captures, _locator} <- match(grammar, input, context) do
       {:ok, pos}
     end
   end
@@ -76,14 +77,15 @@ defmodule Grammar.VM do
   @spec run(Aether.Grammar.t(), String.t(), module(), Actions.context()) ::
           {:ok, term()} | {:error, Error.t() | [Error.t()]}
   def run(%Aether.Grammar{} = grammar, input, actions_module, initial_context \\ nil) do
-    with {:ok, _pos, raw_captures} <- match(grammar, input, initial_context),
+    with {:ok, _pos, raw_captures, locator} <- match(grammar, input, initial_context),
          {:ok, value, _context} <-
            Actions.evaluate(
              grammar.root,
              raw_captures,
              actions_module,
              initial_context,
-             RuleCompiler.capture_shapes(grammar)
+             RuleCompiler.capture_shapes(grammar),
+             locator: locator
            ) do
       {:ok, value}
     end
@@ -97,7 +99,7 @@ defmodule Grammar.VM do
   @spec parse_lossless(Aether.Grammar.t(), String.t(), term()) ::
           {:ok, Ichor.Syntax.Node.t()} | {:error, Error.t() | [Error.t()]}
   def parse_lossless(%Aether.Grammar{} = grammar, input, context \\ nil) do
-    with {:ok, tree, _raw_captures} <- lossless_match(grammar, input, context) do
+    with {:ok, tree, _raw_captures, _locator} <- lossless_match(grammar, input, context) do
       {:ok, tree}
     end
   end
@@ -109,14 +111,15 @@ defmodule Grammar.VM do
   @spec run_lossless(Aether.Grammar.t(), String.t(), module(), Actions.context()) ::
           {:ok, term(), Ichor.Syntax.Node.t()} | {:error, Error.t() | [Error.t()]}
   def run_lossless(%Aether.Grammar{} = grammar, input, actions_module, initial_context \\ nil) do
-    with {:ok, tree, raw_captures} <- lossless_match(grammar, input, initial_context),
+    with {:ok, tree, raw_captures, locator} <- lossless_match(grammar, input, initial_context),
          {:ok, value, _context} <-
            Actions.evaluate(
              grammar.root,
              raw_captures,
              actions_module,
              initial_context,
-             RuleCompiler.capture_shapes(grammar)
+             RuleCompiler.capture_shapes(grammar),
+             locator: locator
            ) do
       {:ok, value, tree}
     end
@@ -183,13 +186,15 @@ defmodule Grammar.VM do
              input
            ),
          {:ok, tokens} <- Grammar.Lexer.reclassify(raw_tokens, grammar.refiners) do
+      stream = List.to_tuple(tokens)
+
       do_run_sequence(
         rule_program,
         entry,
-        List.to_tuple(tokens),
+        stream,
         0,
         grammar,
-        capture_shapes,
+        {capture_shapes, Locator.new(stream, input)},
         actions_module,
         initial_context,
         []
@@ -256,7 +261,12 @@ defmodule Grammar.VM do
        ) do
     case TokenInterpreter.run_from(rule_program.instructions, entry, stream, pos, ctx) do
       {:ok, new_pos, raw_captures} ->
-        case Actions.evaluate(grammar.root, raw_captures, actions_module, ctx, shapes) do
+        {capture_shapes, locator} = shapes
+
+        case Actions.evaluate(grammar.root, raw_captures, actions_module, ctx, capture_shapes,
+               locator: locator,
+               range: {pos, new_pos}
+             ) do
           {:ok, value, new_ctx} ->
             do_run_sequence(
               rule_program,
@@ -284,8 +294,8 @@ defmodule Grammar.VM do
 
   defp match(%Aether.Grammar{} = grammar, input, context) do
     with {:ok, grammar} <- check_engine(grammar),
-         {:ok, pos, raw_captures, _tokens} <- do_match(grammar, input, context, & &1) do
-      {:ok, pos, raw_captures}
+         {:ok, pos, raw_captures, _tokens, locator} <- do_match(grammar, input, context, & &1) do
+      {:ok, pos, raw_captures, locator}
     end
   end
 
@@ -293,9 +303,10 @@ defmodule Grammar.VM do
   # (`lossless/1`), and the records woven with the whole token stream.
   defp lossless_match(%Aether.Grammar{} = grammar, input, context) do
     with {:ok, grammar} <- check_engine(grammar),
-         {:ok, pos, raw_captures, tokens} <- do_match(grammar, input, context, &lossless/1) do
+         {:ok, pos, raw_captures, tokens, locator} <-
+           do_match(grammar, input, context, &lossless/1) do
       {raw_captures, root} = Record.root(grammar.root, pos, raw_captures)
-      {:ok, Syntax.tree(root, tokens, grammar.skip), raw_captures}
+      {:ok, Syntax.tree(root, tokens, grammar.skip), raw_captures, locator}
     end
   end
 
@@ -336,7 +347,7 @@ defmodule Grammar.VM do
 
       case TokenInterpreter.run(instructions, entry, stream, context) do
         {:ok, pos, raw_captures} when pos == tuple_size(stream) ->
-          {:ok, pos, raw_captures, tokens}
+          {:ok, pos, raw_captures, tokens, Locator.new(stream, input)}
 
         {:ok, pos, _raw_captures} ->
           {:error, unexpected_token_error(stream, pos, input)}

@@ -28,10 +28,12 @@ defmodule Grammar.LosslessShiftReduce do
 
   @doc """
   The lossless tree of `input` under `grammar`, whose table is `table`,
-  and the ordinary captures beside it, for `evaluated/5`.
+  and the ordinary captures beside it with the locator of their recorded
+  positions, for `evaluated/5`.
   """
   @spec matched(Aether.Grammar.t(), LRTable.t(), String.t(), term(), run()) ::
-          {:ok, Syntax.Node.t(), Ichor.Capture.raw_captures()} | {:error, Error.t()}
+          {:ok, Syntax.Node.t(), Ichor.Capture.raw_captures(), Grammar.Source.Locator.t()}
+          | {:error, Error.t()}
   def matched(grammar, table, input, context, run) do
     with {:ok, tokens} <- Grammar.VM.tokenize(grammar, input, context) do
       stream = tokens |> Grammar.Source.trimmed(grammar.skip) |> List.to_tuple()
@@ -51,28 +53,31 @@ defmodule Grammar.LosslessShiftReduce do
 
         {:ok, pos, raw_captures} ->
           {raw_captures, record} = Record.root(grammar.root, pos, raw_captures)
-          {:ok, Syntax.tree(record, tokens, grammar.skip), raw_captures}
+          locator = Grammar.Source.Locator.new(stream, input)
+          {:ok, Syntax.tree(record, tokens, grammar.skip), raw_captures, locator}
       end
     end
   end
 
   @doc "`{:ok, value, tree}` from a `matched/5` result, `value` evaluated as the backend's `run/4` evaluates it."
   @spec evaluated(
-          {:ok, Syntax.Node.t(), Ichor.Capture.raw_captures()} | {:error, term()},
+          {:ok, Syntax.Node.t(), Ichor.Capture.raw_captures(), Grammar.Source.Locator.t()}
+          | {:error, term()},
           Aether.Grammar.t(),
           module(),
           Actions.context(),
           Actions.capture_shapes()
         ) :: {:ok, term(), Syntax.Node.t()} | {:error, term()}
   def evaluated(matched, grammar, actions_module, initial_context, capture_shapes) do
-    with {:ok, tree, raw_captures} <- matched,
+    with {:ok, tree, raw_captures, locator} <- matched,
          {:ok, value, _context} <-
            Actions.evaluate(
              grammar.root,
              raw_captures,
              actions_module,
              initial_context,
-             capture_shapes
+             capture_shapes,
+             locator: locator
            ) do
       {:ok, value, tree}
     end

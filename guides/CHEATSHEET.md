@@ -182,6 +182,11 @@ end
   and returns `{:ok, value, new_ctx}` — call `eval` only when you
   actually want the value, which is what lets `if`/`quote`-style special
   forms skip evaluating a branch entirely.
+- `cap.span` is where it matched, `{line, column, length}`; a default
+  `%Ichor.Node{}` carries its rule's span.
+- **An action's error says where**: `{:error, Ichor.Error.new(message:
+  "...", stage: :action)}` with no line is placed where the rule or
+  token matched, and shown with that line and a caret.
 
 ## Import another grammar format
 
