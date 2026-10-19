@@ -82,7 +82,7 @@ defmodule Grammar.Native.RuleCompiler do
            required(:token_names) => MapSet.t(),
            required(:anon_tokens) => MapSet.t(),
            required(:lossless) => boolean(),
-           optional(:owned) => atom() | nil
+           optional(:owned) => {:ok, atom()} | :none
          }
 
   @spec compile_expr(IR.expr(), non_neg_integer(), env(), atom() | nil) ::
@@ -101,7 +101,7 @@ defmodule Grammar.Native.RuleCompiler do
     def_ =
       cond do
         MapSet.member?(env.anon_tokens, ref_name) -> bare_token_def(name, ref_name)
-        ref_name == Map.get(env, :owned) -> owned_ref_def(name, ref_name, env)
+        Map.get(env, :owned) == {:ok, ref_name} -> owned_ref_def(name, ref_name, env)
         true -> captured_ref_def(name, ref_name, ref_name, env)
       end
 

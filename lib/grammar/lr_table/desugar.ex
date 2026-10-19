@@ -198,12 +198,12 @@ defmodule Grammar.LRTable.Desugar do
   defp desugar_element(%IR.Capture{name: cap_name, expr: inner}, discard?, state) do
     {helper, state} = fresh_helper(:grp, state)
     owned = RuleCompiler.owned_ref(inner, state.excluded)
-    state = desugar_group_body(helper, inner, discard? or not is_nil(owned), state)
+    state = desugar_group_body(helper, inner, discard? or owned != :none, state)
 
     capture =
       cond do
         discard? -> nil
-        owned -> {0, cap_name, :text}
+        owned != :none -> {0, cap_name, :text}
         true -> [{0, nil, :splice}, {0, cap_name, :text}]
       end
 
