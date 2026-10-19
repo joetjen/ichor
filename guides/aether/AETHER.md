@@ -276,6 +276,15 @@ capture — writing a bare literal is precisely how a grammar author says
 "I don't care about matching this," and an explicit `paren:"("` still
 works if that literal's value actually is wanted.
 
+`name:` over anything but a bare reference -- a group, an optional, a
+repetition -- captures the **text** that expression matched, as `:text`,
+and the captures inside it are kept beside it: `pair:(key:WORD "="
+value:WORD)` gives `pair`, `key` and `value`. **A reference it directly
+wraps is the one thing it names**: in `sign:SIGN?` or `items:item*` the
+`SIGN` or the `item` is captured under `sign` or `items` only, never
+under its own name as well -- `sign:sign?` is one value, not two.
+Every engine and both backends agree on this.
+
 A capture whose expression sits under a `*`/`+`/`{n,m}` anywhere in
 the rule always arrives as a **list** in `Ichor.Actions`, even if it
 matched zero or exactly one time — never a bare value, and never a
@@ -301,8 +310,11 @@ A grammar-wide pragma picking the parsing algorithm for `@root`:
 @engine glr   ; Tomita-style GLR, forks at genuine ambiguity
 ```
 
-Independent of which backend runs the grammar (`Grammar.VM` or
-`Grammar.Native`, i.e. `use Ichor`) — both support all three engines.
+Both backends run all three engines. Interpreted, each has its own
+module: `Grammar.VM` runs `peg`, `Grammar.LR` runs `lr` and
+`Grammar.GLR` runs `glr` (`Grammar.VM` refuses a grammar tagged
+otherwise). Generated (`Grammar.Native`, i.e. `use Ichor`), the
+engine is chosen from the grammar's `@engine`.
 `peg` (the default, so every grammar written before `@engine` existed
 keeps behaving identically) is ordinary top-down recursive descent: the
 first matching alternative wins, and left recursion is rewritten away by

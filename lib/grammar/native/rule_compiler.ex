@@ -78,7 +78,12 @@ defmodule Grammar.Native.RuleCompiler do
 
   # `env` is what every clause needs to know of the grammar and the set
   # being compiled: `token_names`, `anon_tokens` and `lossless`.
-  @typep env :: %{token_names: MapSet.t(), anon_tokens: MapSet.t(), lossless: boolean()}
+  @typep env :: %{
+           required(:token_names) => MapSet.t(),
+           required(:anon_tokens) => MapSet.t(),
+           required(:lossless) => boolean(),
+           optional(:owned) => atom() | nil
+         }
 
   @spec compile_expr(IR.expr(), non_neg_integer(), env(), atom() | nil) ::
           {[Macro.t()], non_neg_integer()}
@@ -94,10 +99,10 @@ defmodule Grammar.Native.RuleCompiler do
     {name, counter} = name_or_fresh(preferred_name, counter, env)
 
     def_ =
-      if MapSet.member?(env.anon_tokens, ref_name) do
-        bare_token_def(name, ref_name)
-      else
-        captured_ref_def(name, ref_name, ref_name, env)
+      cond do
+        MapSet.member?(env.anon_tokens, ref_name) -> bare_token_def(name, ref_name)
+        ref_name == Map.get(env, :owned) -> owned_ref_def(name, ref_name, env)
+        true -> captured_ref_def(name, ref_name, ref_name, env)
       end
 
     {[def_], counter}
@@ -143,7 +148,11 @@ defmodule Grammar.Native.RuleCompiler do
          preferred_name
        ) do
     {name, counter} = name_or_fresh(preferred_name, counter, env)
-    {inner_name, inner_defs, counter} = compile_one(inner, counter, env)
+
+    # A reference the capture owns (`VMRuleCompiler.owned_ref/2`) is
+    # matched inside it without its implicit capture under its own name.
+    owned = VMRuleCompiler.owned_ref(inner, env.anon_tokens)
+    {inner_name, inner_defs, counter} = compile_one(inner, counter, Map.put(env, :owned, owned))
 
     %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
       Codegen.vars([:stream, :pos, :ref_stack, :context])
@@ -411,6 +420,57 @@ defmodule Grammar.Native.RuleCompiler do
       end
     else
       rule_call_def(name, cap_name, ref_name, env)
+    end
+  end
+
+  # A reference a capture owns: matched, and kept under no name. A token
+  # is matched as an anonymous one is; a rule is called, its captures
+  # dropped, and in the lossless set its call recorded all the same --
+  # every rule that matched is a node of the lossless tree.
+  defp owned_ref_def(name, ref_name, env) do
+    if MapSet.member?(env.token_names, ref_name) do
+      bare_token_def(name, ref_name)
+    else
+      owned_call_def(name, ref_name, env)
+    end
+  end
+
+  defp owned_call_def(name, ref_name, %{lossless: lossless}) do
+    %{stream: stream, pos: pos, ref_stack: ref_stack, context: context} =
+      Codegen.vars([:stream, :pos, :ref_stack, :context])
+
+    target = if lossless, do: lossless_rule_fn_name(ref_name), else: rule_fn_name(ref_name)
+
+    kept =
+      if lossless do
+        quote do
+          {_sub_captures, record} =
+            Ichor.Syntax.Record.called(unquote(ref_name), unquote(pos), new_pos, sub_captures)
+
+          [{unquote(Ichor.Syntax.Record.key()), record}]
+        end
+      else
+        quote do
+          _ = sub_captures
+          []
+        end
+      end
+
+    quote do
+      defp unquote(name)(unquote(stream), unquote(pos), unquote(ref_stack), unquote(context)) do
+        case unquote(target)(
+               unquote(stream),
+               unquote(pos),
+               unquote(ref_stack),
+               unquote(context)
+             ) do
+          {:ok, new_pos, new_ref_stack, sub_captures} ->
+            {:ok, new_pos, new_ref_stack, unquote(kept)}
+
+          _fail ->
+            :fail
+        end
+      end
     end
   end
 

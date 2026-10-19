@@ -182,6 +182,9 @@ end
   and returns `{:ok, value, new_ctx}` — call `eval` only when you
   actually want the value, which is what lets `if`/`quote`-style special
   forms skip evaluating a branch entirely.
+- `name:(...)`, `name:X?`, `name:X*` capture the **text** matched; the
+  captures inside a group are kept beside it, but a reference it
+  directly wraps (`sign:SIGN?`) is captured under `name` only.
 - `cap.span` is where it matched, `{line, column, length}`; a default
   `%Ichor.Node{}` carries its rule's span.
 - **An action's error says where**: `{:error, Ichor.Error.new(message:
