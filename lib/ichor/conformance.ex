@@ -43,6 +43,13 @@ defmodule Ichor.Conformance do
   `{name, text, line, column}`, an inline literal's token named nil --
   or `"error"`, the lexer error's stage, line and column.
 
+  A `"lossless"` answers `"tree"`, the lossless tree of the text
+  (`Ichor.Syntax`) -- a node as `{:rule, name, offset, size, line,
+  column, children}`, a token as `{:token, name, text, trivia, offset,
+  line, column}`, an inline literal's token named nil -- or `"error"`, as
+  a `"parse"` does. Every field is one an implementation computes, so
+  the offsets are held to the cases as the structure is.
+
   A `"parse"` answers one of:
 
   - `"tree"` -- the default tree, what the parse comes to with no
@@ -114,6 +121,24 @@ defmodule Ichor.Conformance do
         %{"tree" => encode(tree(value))}
       else
         {:error, error} -> %{"rendered" => error |> List.wrap() |> hd() |> Ichor.Error.format()}
+      end
+
+    {Map.put(outcome, "id", id), parsers}
+  end
+
+  defp result(
+         %{"id" => id, "operation" => "lossless", "grammar" => path, "text" => text},
+         backend,
+         parsers
+       ) do
+    {parser, parsers} = parser(path, backend, parsers)
+
+    outcome =
+      with {:ok, made} <- parser,
+           {:ok, tree} <- made.parse_lossless.(text) do
+        %{"tree" => encode(syntax(tree, made.anonymous))}
+      else
+        {:error, error} -> %{"error" => encode(failure(error))}
       end
 
     {Map.put(outcome, "id", id), parsers}
@@ -195,6 +220,7 @@ defmodule Ichor.Conformance do
 
     %{
       run: fn text -> engine.run(analysed, text, NoActions) end,
+      parse_lossless: fn text -> engine.parse_lossless(analysed, text) end,
       tokenize: fn text -> Grammar.VM.tokenize(analysed, text) end
     }
   end
@@ -204,11 +230,15 @@ defmodule Ichor.Conformance do
 
     Module.create(
       module,
-      Ichor.generate_from_grammar(grammar, NoActions),
+      Ichor.generate_from_grammar(grammar, NoActions, lossless: true),
       Macro.Env.location(__ENV__)
     )
 
-    %{run: fn text -> module.run(text) end, tokenize: fn text -> module.tokenize(text, nil) end}
+    %{
+      run: fn text -> module.run(text) end,
+      parse_lossless: fn text -> module.parse_lossless(text) end,
+      tokenize: fn text -> module.tokenize(text, nil) end
+    }
   end
 
   # A token as the suite writes it, `{name, text, line, column}`. An
@@ -216,6 +246,18 @@ defmodule Ichor.Conformance do
   # generated -- so its name is nil, and it is known by its text.
   defp token(%Grammar.VM.Token{name: name, text: text, line: line, column: column}, anonymous) do
     {if(MapSet.member?(anonymous, name), do: nil, else: name), text, line, column}
+  end
+
+  # The lossless tree as the suite writes it, every field included; an
+  # inline literal's token named nil, as `token/2` names it.
+  defp syntax(%Ichor.Syntax.Node{} = node, anonymous) do
+    {:rule, node.rule, node.offset, node.size, node.line, node.column,
+     Enum.map(node.children, &syntax(&1, anonymous))}
+  end
+
+  defp syntax(%Ichor.Syntax.Token{} = token, anonymous) do
+    name = if MapSet.member?(anonymous, token.name), do: nil, else: token.name
+    {:token, name, token.text, token.trivia, token.offset, token.line, token.column}
   end
 
   # A value as the suite writes it: a node as a tagged tuple, without

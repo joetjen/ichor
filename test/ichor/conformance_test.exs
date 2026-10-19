@@ -190,6 +190,76 @@ defmodule Ichor.ConformanceTest do
     end
   end
 
+  defp lossless_case(id, grammar, text),
+    do: %{"id" => id, "operation" => "lossless", "grammar" => grammar, "text" => text}
+
+  defp kw(name), do: %{"keyword" => name}
+  defp int(n), do: %{"integer" => Integer.to_string(n)}
+
+  defp rule(name, offset, size, line, column, children),
+    do: %{
+      "tuple" => [kw("rule"), kw(name), int(offset), int(size), int(line), int(column), children]
+    }
+
+  defp leaf(name, text, trivia, offset, line, column),
+    do: %{
+      "tuple" => [
+        kw("token"),
+        if(name, do: kw(name)),
+        text,
+        trivia,
+        int(offset),
+        int(line),
+        int(column)
+      ]
+    }
+
+  for backend <- [:interpreted, :compiled] do
+    # The lossless tree as the suite writes it: a node as
+    # #(:rule name offset size line column [children]), a token as
+    # #(:token name text trivia offset line column) -- every field an
+    # implementation computes, so the offsets are held to the same
+    # cases as the structure.
+    test "#{backend}: lossless answers the tree, every token under the rule that matched it",
+         %{tmp_dir: dir} do
+      path = grammar(dir, "left_sum.aether", @left_sum)
+
+      assert answer(unquote(backend), [lossless_case("a", path, "1+2")]) == [
+               %{
+                 "id" => "a",
+                 "tree" =>
+                   rule("expr", 0, 3, 1, 1, [
+                     rule("expr", 0, 1, 1, 1, [
+                       rule("term", 0, 1, 1, 1, [leaf("NUMBER", "1", false, 0, 1, 1)])
+                     ]),
+                     leaf("PLUS", "+", false, 1, 1, 2),
+                     rule("term", 2, 1, 1, 3, [leaf("NUMBER", "2", false, 2, 1, 3)])
+                   ])
+               }
+             ]
+    end
+
+    test "#{backend}: lossless names an inline literal's token nil and marks trivia",
+         %{tmp_dir: dir} do
+      path = grammar(dir, "calculator.aether", @calculator)
+
+      assert [%{"id" => "a", "tree" => %{"tuple" => [_, _, _, _, _, _, children]}}] =
+               answer(unquote(backend), [lossless_case("a", path, "2 +3")])
+
+      assert leaf("SPACE", " ", true, 1, 1, 2) in children
+      assert leaf(nil, "+", false, 2, 1, 3) in children
+    end
+
+    test "#{backend}: lossless answers what does not parse as its error", %{tmp_dir: dir} do
+      path = grammar(dir, "calculator.aether", @calculator)
+
+      assert [%{"id" => "a", "error" => %{"map" => pairs}}] =
+               answer(unquote(backend), [lossless_case("a", path, "2 +")])
+
+      assert [%{"keyword" => "stage"}, %{"keyword" => "parser"}] in pairs
+    end
+  end
+
   defp render_case(id, grammar, text),
     do: %{"id" => id, "operation" => "render", "grammar" => grammar, "text" => text}
 
