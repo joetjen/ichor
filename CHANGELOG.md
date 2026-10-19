@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`mix ichor.conformance` answers `lossless`**: the lossless tree of
+  a text, as the Ichor Conformance Suite writes it -- a node as
+  `{:rule, name, offset, size, line, column, children}`, a token as
+  `{:token, name, text, trivia, offset, line, column}`, an inline
+  literal's token named nil -- through either backend, so every
+  implementation is held to the same tree, offsets included.
+
 ## [0.5.0] - 2026-10-19
 
 ### Added
