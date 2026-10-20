@@ -187,6 +187,8 @@ end
   directly wraps (`sign:SIGN?`) is captured under `name` only.
 - `cap.span` is where it matched, `{line, column, length}`; a default
   `%Ichor.Node{}` carries its rule's span.
+- **A failed PEG parse says where it went wrong**: at the furthest token
+  reached, with `error.found` and the tokens it `expected` there.
 - **An action's error says where**: `{:error, Ichor.Error.new(message:
   "...", stage: :action)}` with no line is placed where the rule or
   token matched, and shown with that line and a caret.

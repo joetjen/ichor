@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failed PEG parse says where it went wrong**, by both backends and
+  in `run_sequence`: at the furthest token any alternative reached, with
+  what was found there and what would have been accepted --
+  `unexpected "}" -- expected one of: "[", "]", INT`, or `unexpected end
+  of input -- ...` -- in `found` and `expected`. It used to say only that
+  the root did not match, at the first token. What a lookahead failed to
+  match is not counted, and input left over after a complete match is
+  reported at its first token rather than at the trivia before it. Every
+  engine now agrees: LR and GLR already stopped at the failing token.
+
 ### Changed
 
 - **The README warns, at the top, that this library is under heavy

@@ -62,6 +62,11 @@ defmodule Grammar.VM.CharInterpreter do
       {:jmp, target} ->
         loop(instrs, target, input, backtrack, calls)
 
+      # Lookahead brackets, for the rule interpreter's furthest-failure
+      # record (`Grammar.Furthest`): nothing to do at character level.
+      {op} when op in [:pred_enter, :pred_exit] ->
+        loop(instrs, ip + 1, input, backtrack, calls)
+
       # Push a choice point: if anything fails before the matching
       # `:commit`, execution resumes at `target` with `input`/`calls`
       # rolled back to right now.

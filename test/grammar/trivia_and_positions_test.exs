@@ -91,12 +91,12 @@ defmodule Grammar.TriviaAndPositionsTest do
         assert place(run(unquote(engine), unquote(backend), "  +1")) == {:parser, 1, 3}
       end
 
-      # An ordered choice backtracks out of `(op:"+" NUMBER)*` and
-      # reports the `+` left over; a shift-reduce parser has shifted it,
-      # and runs into the end of the input.
-      test "places input that ends too soon where the engine stopped" do
-        expected = if unquote(engine) == :peg, do: {:parser, 1, 2}, else: {:parser, 1, 4}
-        assert place(run(unquote(engine), unquote(backend), "1+ ")) == expected
+      # Every engine runs into the end of the input: a shift-reduce
+      # parser has shifted the `+`, and an ordered choice that backtracks
+      # out of `(op:"+" NUMBER)*` still reports the furthest it reached
+      # (`Grammar.Furthest`) rather than the `+` left over.
+      test "places input that ends too soon at the end of the input" do
+        assert place(run(unquote(engine), unquote(backend), "1+ ")) == {:parser, 1, 4}
       end
     end
   end

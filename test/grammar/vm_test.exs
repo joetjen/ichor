@@ -45,16 +45,17 @@ defmodule Grammar.VMTest do
       assert {:ok, _} = Grammar.VM.parse(g, "3.5 * 2")
     end
 
-    test "empty input does not match expr", %{grammar: g} do
+    test "empty input is unexpected end of input, saying what an expr starts with",
+         %{grammar: g} do
       assert {:error, error} = Grammar.VM.parse(g, "")
-      assert error.message =~ "does not match"
+      assert error.message == ~s(unexpected end of input -- expected one of: "(", NUMBER)
     end
 
-    test "trailing operator with nothing after it is rejected, pointing at the dangling operator",
+    test "trailing operator with nothing after it is rejected where its operand was wanted",
          %{grammar: g} do
       assert {:error, error} = Grammar.VM.parse(g, "2 + ")
-      assert error.message =~ "unexpected"
-      assert error.column == 3
+      assert error.message =~ "unexpected end of input"
+      assert error.column == 5
     end
 
     test "trailing garbage after a complete expression is rejected", %{grammar: g} do
