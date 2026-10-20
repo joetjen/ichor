@@ -374,8 +374,8 @@ Ichor`, it genuinely can be `only: :dev, runtime: false`:
 ```elixir
 def deps do
   [
-    {:ichor_runtime, "~> 0.4"},
-    {:ichor, "~> 0.5", only: :dev, runtime: false}
+    {:ichor_runtime, "~> 0.5"},
+    {:ichor, "~> 0.6", only: :dev, runtime: false}
   ]
 end
 ```
