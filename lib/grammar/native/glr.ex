@@ -97,6 +97,16 @@ defmodule Grammar.Native.GLR do
       @spec parse(String.t(), term()) ::
               {:ok, non_neg_integer(), Ichor.Capture.raw_captures()} | {:error, Ichor.Error.t()}
       def parse(input, context \\ nil) do
+        with {:ok, pos, raw_captures, _locator} <- match(input, context) do
+          {:ok, pos, Ichor.Capture.plain(raw_captures)}
+        end
+      end
+
+      # The match `parse/2` and `run/2` share: the raw captures with the
+      # positions the reductions recorded (`Ichor.Capture.at/3`), and the
+      # locator that turns them into spans. `parse/2` hands its caller
+      # plain captures, as it always has.
+      defp match(input, context) do
         with {:ok, tokens} <- tokenize(input, context) do
           stream = tokens |> Grammar.Source.trimmed(unquote(grammar.skip)) |> List.to_tuple()
 
@@ -108,8 +118,11 @@ defmodule Grammar.Native.GLR do
                  unquote(end_symbol),
                  stream
                ) do
-            {:error, error} -> {:error, Grammar.Source.placed(error, input)}
-            matched -> matched
+            {:error, error} ->
+              {:error, Grammar.Source.placed(error, input)}
+
+            {:ok, pos, raw_captures} ->
+              {:ok, pos, raw_captures, Grammar.Source.Locator.new(stream, input)}
           end
         end
       end
@@ -118,14 +131,15 @@ defmodule Grammar.Native.GLR do
       @spec run(String.t(), Ichor.Actions.context()) ::
               {:ok, term()} | {:error, Ichor.Error.t() | [Ichor.Error.t()]}
       def run(input, initial_context \\ nil) do
-        with {:ok, _pos, raw_captures} <- parse(input, initial_context),
+        with {:ok, _pos, raw_captures, locator} <- match(input, initial_context),
              {:ok, value, _context} <-
                Ichor.Actions.evaluate(
                  unquote(root),
                  raw_captures,
                  unquote(actions_module),
                  initial_context,
-                 unquote(capture_shapes)
+                 unquote(capture_shapes),
+                 locator: locator
                ) do
           {:ok, value}
         end

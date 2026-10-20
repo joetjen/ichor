@@ -213,6 +213,12 @@ A few things worth noticing:
   so they always arrive as lists — even an expression with no operators
   at all still gets `%{op: [], term: [single_capture]}`, never a missing
   key.
+- Each capture also knows where it matched: `.span` is `{line, column,
+  length}`. And an action that refuses something just returns
+  `{:error, Ichor.Error.new(message: ..., stage: :action)}` — an error
+  with no position is placed where its rule or token matched, and shown
+  with that line and a caret, so the user is pointed at the offending
+  text without the action having to work out where it is.
 
 Now run the grammar through its Actions module:
 
@@ -368,8 +374,8 @@ Ichor`, it genuinely can be `only: :dev, runtime: false`:
 ```elixir
 def deps do
   [
-    {:ichor_runtime, "~> 0.4"},
-    {:ichor, "~> 0.5", only: :dev, runtime: false}
+    {:ichor_runtime, "~> 0.5"},
+    {:ichor, "~> 0.6", only: :dev, runtime: false}
   ]
 end
 ```

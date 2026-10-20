@@ -144,7 +144,10 @@ defmodule Grammar.Native.TokenizerCompiler do
                      byte_size(unquote(dep_input)) - byte_size(text)
                    )
 
-                 {:ok, text, rest, {:rule, unquote(dep), dep_caps}}
+                 # Plain: the scan callback is promised `node_t()`s, and
+                 # the positions recorded here count a stream of the
+                 # suffix, not the input's.
+                 {:ok, text, rest, Ichor.Capture.plain({:rule, unquote(dep), dep_caps})}
 
                :fail ->
                  :fail

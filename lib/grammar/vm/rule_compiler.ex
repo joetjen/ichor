@@ -157,7 +157,11 @@ defmodule Grammar.VM.RuleCompiler do
 
   defp repeatable_names(%IR.Capture{name: name, expr: inner}, rep?, anon, acc) do
     acc = if rep?, do: MapSet.put(acc, name), else: acc
-    repeatable_names(inner, rep?, anon, acc)
+
+    # A reference the capture owns (`name:X?`, `name:X*`) is captured
+    # under `name` only -- never under its own name too -- so there is
+    # nothing of `X`'s to be repeatable. Anything else inside is.
+    if owned_ref(inner, anon) == :none, do: repeatable_names(inner, rep?, anon, acc), else: acc
   end
 
   defp repeatable_names(%IR.RuleRef{name: name}, rep?, anon, acc) do
@@ -199,8 +203,25 @@ defmodule Grammar.VM.RuleCompiler do
     {captured_custom(function, custom), counter}
   end
 
+  # A capture over anything but a bare reference is the text it matched,
+  # with the captures inside it kept beside it. A reference it directly
+  # wraps -- `sign:SIGN?`, `items:item*` -- is the one thing it names, so
+  # that reference is matched without its implicit capture under its own
+  # name: `sign` is the `SIGN`'s name, and capturing the `SIGN` as well
+  # would hand an action the same thing twice (as a list, when the two
+  # names are the same).
   defp leaf(%IR.Capture{name: cap_name, expr: inner}, counter, token_names, anon_tokens) do
-    {ops, counter} = Compiler.compile(inner, counter, &leaf(&1, &2, token_names, anon_tokens))
+    owned = owned_ref(inner, anon_tokens)
+
+    inner_leaf = fn
+      %IR.RuleRef{name: name}, counter when owned == {:ok, name} ->
+        {captured_ref(owned_name(), name, token_names), counter}
+
+      ir, counter ->
+        leaf(ir, counter, token_names, anon_tokens)
+    end
+
+    {ops, counter} = Compiler.compile(inner, counter, inner_leaf)
     {[{:cap_start, cap_name, :text, nil}] ++ ops ++ [{:cap_end, cap_name}], counter}
   end
 
@@ -213,6 +234,54 @@ defmodule Grammar.VM.RuleCompiler do
     {ops, counter} = Compiler.compile(e, counter, &leaf(&1, &2, token_names, anon_tokens))
     {[{:samecol_check} | ops], counter}
   end
+
+  @doc """
+  The reference a capture's expression directly wraps, as `{:ok, name}`,
+  or `:none`. Tagged rather than nil-or-name: a rule named `nil` is
+  the atom nil, and must be ownable like any other.
+
+  `X` for `X?`, `X*`, `X+` or `X{n,m}`, however nested: every reference
+  in the expression that would be implicitly captured names the same
+  `X`, and nothing in it is a capture of its own. Skip-splicing turns
+  `A*` into `(A (SPACE* A)*)?`, so what is asked is what the expression
+  references, not its shape; `excluded` (`implicit_capture_exclusions/1`)
+  are the references never implicitly captured -- anonymous literals and
+  the skip token -- which do not count. A capture owns that reference: it
+  is captured under the capture's name only, never under its own name as
+  well.
+
+  Shared by every backend, so the engines agree on what a capture owns.
+  """
+  @spec owned_ref(IR.expr(), MapSet.t(atom())) :: {:ok, atom()} | :none
+  def owned_ref(ir, excluded) do
+    case referenced(ir, excluded, MapSet.new()) do
+      :captures -> :none
+      names -> if MapSet.size(names) == 1, do: {:ok, Enum.at(names, 0)}, else: :none
+    end
+  end
+
+  @doc """
+  The capture name an owned reference is matched under: kept under no
+  name at all (`Grammar.VM.TokenInterpreter`), but in a lossless program
+  still recorded.
+
+  **Not nil**, which is what a rule named `nil` captures under -- that
+  atom *is* nil -- and reserved: `$` is not a name character in any
+  grammar notation Ichor reads.
+  """
+  @spec owned_name() :: atom()
+  def owned_name, do: :"$owned"
+
+  defp referenced(_ir, _excluded, :captures), do: :captures
+  defp referenced(%IR.Capture{}, _excluded, _names), do: :captures
+  defp referenced(%IR.Custom{}, _excluded, _names), do: :captures
+
+  defp referenced(%IR.RuleRef{name: name}, excluded, names) do
+    if MapSet.member?(excluded, name), do: names, else: MapSet.put(names, name)
+  end
+
+  defp referenced(ir, excluded, names),
+    do: Enum.reduce(IR.children(ir), names, &referenced(&1, excluded, &2))
 
   defp captured_ref(cap_name, ref_name, token_names) do
     if MapSet.member?(token_names, ref_name) do

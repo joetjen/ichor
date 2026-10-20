@@ -104,14 +104,11 @@ defmodule Ichor.ABNF.Actions do
   end
 
   # `repeat := (min:(DIGIT*) STAR max:(DIGIT*)) | DIGIT+` -- a named
-  # capture *adds* a text capture, it doesn't suppress the wrapped
-  # expression's own implicit one, so the first alternative's raw
-  # captures are actually `%{min: _, max: _, DIGIT: _, STAR: _}` --
-  # `:DIGIT` (both `min:`/`max:`'s inner runs, merged) is present
-  # *either way*. Matching on `:min` first (only the first alternative
-  # ever has it) before falling back to bare `:DIGIT` (only the second
-  # alternative, `DIGIT+`, ever has *only* that) is what actually tells
-  # the two apart.
+  # capture owns the reference it directly wraps
+  # (`Grammar.VM.RuleCompiler.owned_ref/2`), so the first alternative's
+  # captures are `%{min: _, max: _, STAR: _}` and only the second,
+  # `DIGIT+`, has `:DIGIT`. Matching on `:min` first tells the two apart
+  # either way.
   def handle_rule(:repeat, %{min: min_cap, max: max_cap}, ctx) do
     with {:ok, min_text, ctx} <- min_cap.eval.(ctx),
          {:ok, max_text, ctx} <- max_cap.eval.(ctx) do

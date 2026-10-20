@@ -223,7 +223,10 @@ defmodule Grammar.VM.Tokenizer do
              {consumed, _rest} = Enum.split(tokens, token_pos)
              text = Enum.map_join(consumed, "", & &1.text)
              rest = binary_part(input, byte_size(text), byte_size(input) - byte_size(text))
-             {:ok, text, rest, {:rule, name, raw_captures}}
+             # Plain: the scan callback is promised `node_t()`s, and the
+             # positions recorded here count a stream of the suffix, not
+             # the input's.
+             {:ok, text, rest, Ichor.Capture.plain({:rule, name, raw_captures})}
 
            :fail ->
              :fail
