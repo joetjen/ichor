@@ -259,7 +259,11 @@ defmodule Grammar.VM do
          ctx,
          acc
        ) do
-    case TokenInterpreter.run_from(rule_program.instructions, entry, stream, pos, ctx) do
+    previous = Grammar.Furthest.start()
+    matched = TokenInterpreter.run_from(rule_program.instructions, entry, stream, pos, ctx)
+    record = Grammar.Furthest.finish(previous)
+
+    case matched do
       {:ok, new_pos, raw_captures} ->
         {capture_shapes, locator} = shapes
 
@@ -288,8 +292,41 @@ defmodule Grammar.VM do
 
       :fail ->
         {:error,
-         Error.new(message: "input does not match #{inspect(grammar.root)}", stage: :parser)}
+         furthest_or(record, stream, input_of(stream), nil, grammar, fn ->
+           Error.new(message: "input does not match #{inspect(grammar.root)}", stage: :parser)
+         end)}
     end
+  end
+
+  # A sequence matches over the stream alone; the input for a placed
+  # error's snippet is the tokens' text, which is the input.
+  defp input_of(stream), do: stream |> Tuple.to_list() |> Enum.map_join(& &1.text)
+
+  # The error at the furthest token any alternative reached
+  # (`Grammar.Furthest`), or the caller's own when that says nothing
+  # better: no token was ever wanted, or input left over after a
+  # complete match is further.
+  defp furthest_or(record, stream, input, leftover, grammar, fallback) do
+    names = token_descriptions(grammar)
+    describe = fn name -> Map.get(names, name, Atom.to_string(name)) end
+
+    Grammar.Furthest.error(record, stream, input, leftover, grammar.skip, describe) ||
+      fallback.()
+  end
+
+  @doc """
+  How an error names each anonymous token: by its literal text, quoted,
+  where it is a literal. Every other token is named by its own name.
+
+  Public because `Grammar.Native` writes the same names into a generated
+  parser, so the two backends report a failure in the same words.
+  """
+  @spec token_descriptions(Aether.Grammar.t()) :: %{atom() => String.t()}
+  def token_descriptions(grammar) do
+    for name <- grammar.anon_tokens,
+        %IR.Literal{value: value} <- [Map.get(grammar.tokens, name)],
+        into: %{},
+        do: {name, inspect(value)}
   end
 
   defp match(%Aether.Grammar{} = grammar, input, context) do
@@ -345,24 +382,38 @@ defmodule Grammar.VM do
       entry = Map.fetch!(rule_program.entry_points, grammar.root)
       instructions = program_fn.(rule_program).instructions
 
-      case TokenInterpreter.run(instructions, entry, stream, context) do
+      previous = Grammar.Furthest.start()
+      matched = TokenInterpreter.run(instructions, entry, stream, context)
+      record = Grammar.Furthest.finish(previous)
+
+      case matched do
         {:ok, pos, raw_captures} when pos == tuple_size(stream) ->
           {:ok, pos, raw_captures, tokens, Locator.new(stream, input)}
 
+        # What is left over is the first token that is not trivia: a
+        # root that matched a prefix stops in front of the skip tokens
+        # skip-splicing would have taken next.
         {:ok, pos, _raw_captures} ->
-          {:error, unexpected_token_error(stream, pos, input)}
-
-        :fail ->
-          {line, column} = Grammar.Source.position(stream, 0, input)
+          left = Grammar.Native.Runtime.Parser.skip_leading_trivia(stream, pos, grammar.skip)
 
           {:error,
-           Error.new(
-             message: "input does not match #{inspect(grammar.root)}",
-             stage: :parser,
-             line: line,
-             column: column,
-             source: input
-           )}
+           furthest_or(record, stream, input, left, grammar, fn ->
+             unexpected_token_error(stream, left, input)
+           end)}
+
+        :fail ->
+          {:error,
+           furthest_or(record, stream, input, nil, grammar, fn ->
+             {line, column} = Grammar.Source.position(stream, 0, input)
+
+             Error.new(
+               message: "input does not match #{inspect(grammar.root)}",
+               stage: :parser,
+               line: line,
+               column: column,
+               source: input
+             )
+           end)}
       end
     end
   end
