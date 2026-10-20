@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The README warns, at the top, that this library is under heavy
+  development** and not for production use before `1.0.0`: things can
+  and will break, and the specification can and will change, between
+  any two releases until then.
+
 ## [0.6.0] - 2026-10-20
 
 ### Fixed
