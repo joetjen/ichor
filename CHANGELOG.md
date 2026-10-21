@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-21
+
 ### Fixed
 
 - **A failed PEG parse says where it went wrong**, by both backends and
