@@ -86,7 +86,7 @@ defmodule Ichor.ConformanceTest do
                    "map" => [
                      [%{"keyword" => "stage"}, %{"keyword" => "parser"}],
                      [%{"keyword" => "line"}, %{"integer" => "1"}],
-                     [%{"keyword" => "column"}, %{"integer" => "3"}]
+                     [%{"keyword" => "column"}, %{"integer" => "4"}]
                    ]
                  })
       end
@@ -272,7 +272,7 @@ defmodule Ichor.ConformanceTest do
                %{
                  "id" => "a",
                  "rendered" =>
-                   "1:3: unexpected \"+\" -- did not expect more input here\n1 | 2 +\n  |   ^"
+                   "1:4: unexpected end of input -- expected one of: \"(\", NUMBER\n1 | 2 +\n  |    ^"
                }
              ]
     end

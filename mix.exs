@@ -1,7 +1,7 @@
 defmodule Ichor.MixProject do
   use Mix.Project
 
-  @version "0.6.0"
+  @version "0.7.0"
 
   # `mix precommit` includes `test` as a step; without this, Mix runs
   # the whole alias chain (including `mix test`) in :dev, and `mix test`
@@ -63,7 +63,7 @@ defmodule Ichor.MixProject do
       # ExDoc is invoked via `MIX_ENV=dev mix docs`
 
       # === RUNTIME ===
-      {:ichor_runtime, "~> 0.5"}
+      {:ichor_runtime, "~> 0.6"}
     ]
   end
 
@@ -71,6 +71,7 @@ defmodule Ichor.MixProject do
   # (slowest, especially its first PLT build) runs last.
   defp aliases do
     [
+      docs: [&readme_for_docs/1, "docs"],
       precommit: [
         "format",
         "compile --warnings-as-errors",
@@ -82,8 +83,25 @@ defmodule Ichor.MixProject do
     ]
   end
 
+  # The README for ExDoc: GitHub's `> [!WARNING]` alert, which ExDoc does
+  # not render, turned into ExDoc's own warning admonition. GitHub shows
+  # the README itself; HexDocs shows this copy under the same name. Run
+  # through the `docs` alias, which `mix hex.publish` builds through too.
+  # The same in every Elixir Ichor, Cooper and Dextrin.
+  defp readme_for_docs(_args) do
+    File.mkdir_p!("doc_src")
+
+    readme =
+      "README.md"
+      |> File.read!()
+      |> String.replace("> [!WARNING]", "> #### Warning {: .warning}")
+
+    File.write!("doc_src/README.md", readme)
+  end
+
   defp description do
-    "Compiles grammar definitions -- Aether, its own DSL, plus ABNF/EBNF/PEG/BNF " <>
+    "Under heavy development: not for production use before 1.0.0. " <>
+      "Compiles grammar definitions -- Aether, its own DSL, plus ABNF/EBNF/PEG/BNF " <>
       "importers -- into separated Lexer/Parser/Analysis/Executor modules, with " <>
       "both an interpreted VM backend and a compile-time native codegen backend."
   end
@@ -112,7 +130,9 @@ defmodule Ichor.MixProject do
 
   defp extras do
     [
-      "README.md",
+      # The README as `readme_for_docs/1` rewrites it, so its warning is a
+      # box: same page name, and View Source still opens the real README.
+      {"doc_src/README.md", filename: "readme", source: "README.md"},
       "guides/TUTORIAL.md",
       "guides/EXAMPLES.md",
       "guides/CHEATSHEET.md",

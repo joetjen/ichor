@@ -57,6 +57,7 @@ defmodule Grammar.Native do
 
       unquote_splicing(tokenizer_defs)
       unquote_splicing(rule_defs)
+      unquote(describe_token_def(grammar))
 
       unquote(tokenize_def)
       unquote_splicing(lossless_defs)
@@ -82,7 +83,8 @@ defmodule Grammar.Native do
             matched(
               root_fn,
               root,
-              quote(do: {:ok, pos, raw_captures, Grammar.Source.Locator.new(stream, input)})
+              quote(do: {:ok, pos, raw_captures, Grammar.Source.Locator.new(stream, input)}),
+              grammar
             )
           )
         end
@@ -130,7 +132,11 @@ defmodule Grammar.Native do
         if pos >= tuple_size(stream) do
           {:ok, Enum.reverse(acc), ctx}
         else
-          case unquote(root_fn)(stream, pos, [0], ctx) do
+          previous = Grammar.Furthest.start()
+          answer = unquote(root_fn)(stream, pos, [0], ctx)
+          record = Grammar.Furthest.finish(previous)
+
+          case answer do
             {:ok, new_pos, _ref_stack, raw_captures} ->
               case Ichor.Actions.evaluate(
                      unquote(root),
@@ -150,10 +156,18 @@ defmodule Grammar.Native do
 
             _fail ->
               {:error,
-               Ichor.Error.new(
-                 message: "input does not match #{inspect(unquote(root))}",
-                 stage: :parser
-               )}
+               Grammar.Furthest.error(
+                 record,
+                 stream,
+                 locator.input,
+                 nil,
+                 unquote(grammar.skip),
+                 &describe_token/1
+               ) ||
+                 Ichor.Error.new(
+                   message: "input does not match #{inspect(unquote(root))}",
+                   stage: :parser
+                 )}
           end
         end
       end
@@ -164,27 +178,55 @@ defmodule Grammar.Native do
   # root consumed the whole stream (`pos` and `raw_captures` bound), the
   # same errors otherwise. Shared by `parse/2` and the lossless match, so
   # the lossless parser fails word for word as the ordinary one does.
-  defp matched(root_fn, root, success) do
+  #
+  # A failure is reported at the furthest token any alternative reached
+  # (`Grammar.Furthest`), with what was wanted there -- the same words as
+  # `Grammar.VM`, whose token names (`token_descriptions/1`) are written
+  # in -- or, when that says nothing better, as before.
+  defp matched(root_fn, root, success, grammar) do
+    skip = grammar.skip
+
     quote do
-      case unquote(root_fn)(stream, 0, [0], context) do
+      previous = Grammar.Furthest.start()
+      answer = unquote(root_fn)(stream, 0, [0], context)
+      record = Grammar.Furthest.finish(previous)
+
+      case answer do
         {:ok, pos, _ref_stack, raw_captures} when pos == tuple_size(stream) ->
           unquote(success)
 
         {:ok, pos, _ref_stack, _raw_captures} ->
-          {:error, Parser.unexpected_token_error(stream, pos, input)}
-
-        _fail ->
-          {line, column} = Grammar.Source.position(stream, 0, input)
+          left = Parser.skip_leading_trivia(stream, pos, unquote(skip))
 
           {:error,
-           Ichor.Error.new(
-             message: "input does not match #{inspect(unquote(root))}",
-             stage: :parser,
-             line: line,
-             column: column,
-             source: input
-           )}
+           Grammar.Furthest.error(record, stream, input, left, unquote(skip), &describe_token/1) ||
+             Parser.unexpected_token_error(stream, left, input)}
+
+        _fail ->
+          {:error,
+           Grammar.Furthest.error(record, stream, input, nil, unquote(skip), &describe_token/1) ||
+             (
+               {line, column} = Grammar.Source.position(stream, 0, input)
+
+               Ichor.Error.new(
+                 message: "input does not match #{inspect(unquote(root))}",
+                 stage: :parser,
+                 line: line,
+                 column: column,
+                 source: input
+               )
+             )}
       end
+    end
+  end
+
+  # How an error names a token: an anonymous literal by its text, as
+  # `Grammar.VM.token_descriptions/1` has it, anything else by its name.
+  defp describe_token_def(grammar) do
+    names = Macro.escape(Grammar.VM.token_descriptions(grammar))
+
+    quote do
+      defp describe_token(name), do: Map.get(unquote(names), name, Atom.to_string(name))
     end
   end
 
@@ -238,7 +280,7 @@ defmodule Grammar.Native do
           defp lossless_match(input, context) do
             with {:ok, tokens} <- tokenize(input, context) do
               stream = tokens |> Grammar.Source.trimmed(unquote(grammar.skip)) |> List.to_tuple()
-              unquote(matched(root_fn, root, success))
+              unquote(matched(root_fn, root, success, grammar))
             end
           end
         end

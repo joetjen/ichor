@@ -95,7 +95,13 @@ defmodule Grammar.VM.Compiler do
     {l1, counter} = fresh(counter)
     {l2, counter} = fresh(counter)
     {ops, counter} = compile(e, counter, leaf_fun)
-    {[{:choice, l1}] ++ ops ++ [{:back_commit, l2}, {:label, l1}, {:fail}, {:label, l2}], counter}
+    # `pred_enter`/`pred_exit` bracket the lookahead's own match on both
+    # of its exits, so its failures are no expectation of the parse's
+    # (`Grammar.Furthest`); a character program treats them as no-ops.
+    {[{:pred_enter}, {:choice, l1}] ++
+       ops ++
+       [{:pred_exit}, {:back_commit, l2}, {:label, l1}, {:pred_exit}, {:fail}, {:label, l2}],
+     counter}
   end
 
   # !e: on success, discard our own choice point and fail outward
@@ -104,7 +110,9 @@ defmodule Grammar.VM.Compiler do
   def compile(%IR.NotPred{expr: e}, counter, leaf_fun) do
     {l1, counter} = fresh(counter)
     {ops, counter} = compile(e, counter, leaf_fun)
-    {[{:choice, l1}] ++ ops ++ [{:fail_twice}, {:label, l1}], counter}
+
+    {[{:pred_enter}, {:choice, l1}] ++
+       ops ++ [{:pred_exit}, {:fail_twice}, {:label, l1}, {:pred_exit}], counter}
   end
 
   def compile(other, counter, leaf_fun), do: leaf_fun.(other, counter)

@@ -94,9 +94,43 @@ defmodule Grammar.VM.TokenInterpreter do
               context
             )
 
+          # Where the parse went wrong, should this be as far as it gets.
           _ ->
+            Grammar.Furthest.failed(pos, name)
             fail(instrs, backtrack, stream, context)
         end
+
+      {:pred_enter} ->
+        Grammar.Furthest.enter_predicate()
+
+        loop(
+          instrs,
+          ip + 1,
+          pos,
+          stream,
+          ref_stack,
+          backtrack,
+          calls,
+          frame,
+          last_result,
+          context
+        )
+
+      {:pred_exit} ->
+        Grammar.Furthest.exit_predicate()
+
+        loop(
+          instrs,
+          ip + 1,
+          pos,
+          stream,
+          ref_stack,
+          backtrack,
+          calls,
+          frame,
+          last_result,
+          context
+        )
 
       {:cap_start, name, kind, ref_name} ->
         pending = [{name, kind, ref_name, pos} | frame.pending]

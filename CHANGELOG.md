@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.7.0] - 2026-10-21
+
+### Fixed
+
+- **A failed PEG parse says where it went wrong**, by both backends and
+  in `run_sequence`: at the furthest token any alternative reached, with
+  what was found there and what would have been accepted --
+  `unexpected "}" -- expected one of: "[", "]", INT`, or `unexpected end
+  of input -- ...` -- in `found` and `expected`. It used to say only that
+  the root did not match, at the first token. What a lookahead failed to
+  match is not counted, and input left over after a complete match is
+  reported at its first token rather than at the trivia before it. Every
+  engine now agrees: LR and GLR already stopped at the failing token.
+
+### Changed
+
+- **The README warns, at the top, that this library is under heavy
+  development** and not for production use before `1.0.0`: things can
+  and will break, and the specification can and will change, between
+  any two releases until then.
+- **The warning reaches hex.pm and HexDocs too**: the package
+  description starts with it, so search results show it, and HexDocs
+  shows the README's warning as a warning box -- GitHub's `> [!WARNING]`
+  alert, which ExDoc does not render, is rewritten into ExDoc's own
+  admonition when the docs are built (the `docs` alias; the README is
+  unchanged).
+
 ## [0.6.0] - 2026-10-20
 
 ### Fixed
