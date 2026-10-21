@@ -63,7 +63,9 @@ defmodule Ichor.MixProject do
       # ExDoc is invoked via `MIX_ENV=dev mix docs`
 
       # === RUNTIME ===
-      {:ichor_runtime, "~> 0.6"}
+      # A path until ichor_runtime 0.6.1 is published, which this needs
+      # (Tokenizer.char_class/1): the release commit puts back `"~> 0.6.1"`.
+      {:ichor_runtime, path: "../ichor_runtime"}
     ]
   end
 

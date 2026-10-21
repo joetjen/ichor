@@ -40,10 +40,10 @@ defmodule Grammar.VM.CharInterpreter do
           fail(instrs, backtrack)
         end
 
-      {:set, ranges} ->
+      {:set, class} ->
         case input do
           <<c::utf8, rest::binary>> ->
-            if Enum.any?(ranges, fn {a, b} -> c in a..b end) do
+            if Grammar.Native.Runtime.Tokenizer.in_class?(c, class) do
               loop(instrs, ip + 1, rest, backtrack, calls)
             else
               fail(instrs, backtrack)
