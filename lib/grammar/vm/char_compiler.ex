@@ -15,6 +15,7 @@ defmodule Grammar.VM.CharCompiler do
   """
 
   alias Grammar.IR
+  alias Grammar.Native.Runtime.Tokenizer
   alias Grammar.VM.{Compiler, Linker}
 
   @type custom_lexeme :: {module :: module(), function :: atom(), deps :: [atom()]}
@@ -42,7 +43,7 @@ defmodule Grammar.VM.CharCompiler do
   defp custom_lexeme?(_), do: false
 
   defp leaf(%IR.Literal{value: v}, counter), do: {[{:lit, v}], counter}
-  defp leaf(%IR.CharClass{ranges: r}, counter), do: {[{:set, r}], counter}
+  defp leaf(%IR.CharClass{ranges: r}, counter), do: {[{:set, Tokenizer.char_class(r)}], counter}
   defp leaf(%IR.Any{}, counter), do: {[{:any}], counter}
   defp leaf(%IR.RuleRef{name: name}, counter), do: {[{:call, name}], counter}
 end
