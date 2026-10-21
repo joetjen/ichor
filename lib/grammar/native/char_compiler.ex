@@ -90,7 +90,7 @@ defmodule Grammar.Native.CharCompiler do
         defp unquote(name)(unquote(input)) do
           case unquote(input) do
             <<c::utf8, rest::binary>> ->
-              if Tokenizer.in_ranges?(c, unquote(ranges)) do
+              if Tokenizer.in_class?(c, unquote(Macro.escape(Tokenizer.char_class(ranges)))) do
                 {:ok, <<c::utf8>>, rest}
               else
                 :fail

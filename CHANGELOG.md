@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A generated parser tokenizes several times faster** when a grammar
+  has large character classes, such as Unicode identifier classes: each
+  class is prepared once (`Tokenizer.char_class/1`, `ichor_runtime`
+  0.6.1) instead of being scanned range by range for every character,
+  by the generated parser and by the interpreter alike. Regenerate a
+  checked-in parser to get it; on a 5 KB Dextrin document, tokenizing
+  takes 2.0 ms instead of 12.4 ms.
+
 ## [0.7.0] - 2026-10-21
 
 ### Fixed
