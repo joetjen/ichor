@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The install lines in the README and guides name the current
+  versions** (`ichor_runtime ~> 0.6.1`, `ichor ~> 0.7`); they still said
+  `~> 0.5` and `~> 0.6`.
+
 ## [0.7.1] - 2026-10-21
 
 ### Fixed
