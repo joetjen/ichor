@@ -27,12 +27,14 @@ defmodule Grammar.LRTable.Desugar do
   own `token_names/1`/`implicit_capture_exclusions/1`) so a
   `@keywords`/`@refine` target name, an anonymous auto-promoted literal
   token, or the grammar's own spliced `@skip` token are all treated
-  identically here -- in particular, a spliced `@skip` token (already an
-  ordinary, uncaptured `Star[RuleRef(skip)]` node in the IR by the time
-  this runs -- see `Aether.Eval`'s own `splice_skip/2`) needs no special
-  handling at all: it desugars into an ordinary `:splice`-kind helper
-  nonterminal whose own body has no capture entries, so splicing its
-  empty map into the parent is simply a no-op.
+  identically here. The one exception is the grammar's spliced `@skip`
+  token (an uncaptured `Star[RuleRef(skip)]` between a rule's elements
+  -- see `Aether.Eval`'s own `splice_skip/2`): it is left out, since an
+  LR or GLR parse drops skip tokens from the stream before it starts
+  (`Grammar.Source.significant/2`). Spliced, an optional element between
+  two others would leave two of them side by side, a conflict no table
+  with one token of lookahead can decide. A rule naming the skip token
+  outright is refused.
   """
 
   alias Grammar.IR
@@ -144,8 +146,12 @@ defmodule Grammar.LRTable.Desugar do
   end
 
   defp desugar_elements(elements, discard?, state) do
+    skip = state.grammar.skip
+
     {rev_rhs, rev_captures, _index, state} =
-      Enum.reduce(elements, {[], [], 0, state}, fn el, {rhs_acc, cap_acc, idx, state} ->
+      elements
+      |> Enum.reject(&spliced_skip?(&1, skip))
+      |> Enum.reduce({[], [], 0, state}, fn el, {rhs_acc, cap_acc, idx, state} ->
         {symbol, capture, state} = desugar_element(el, discard?, state)
 
         # An element captures nothing, once, or -- a capture over a group
@@ -162,13 +168,18 @@ defmodule Grammar.LRTable.Desugar do
     {Enum.reverse(rev_rhs), Enum.reverse(rev_captures), state}
   end
 
-  # ---- one grammar term -> one RHS symbol (+ optional capture entry) -----
+  # The `@skip` token `Aether.Eval` splices between a rule's elements
+  # (`skip*`). An LR or GLR parse drops it from the stream instead
+  # (`Grammar.Source.significant/2`): spliced, an optional element between
+  # two others leaves two `skip*` side by side, and a table with one token
+  # of lookahead cannot tell which one a skip token belongs to.
+  defp spliced_skip?(%IR.Star{expr: %IR.RuleRef{name: name}}, skip),
+    do: skip != nil and name == skip
 
-  # A bare (implicitly self-captured) or explicitly-captured direct
-  # `RuleRef` never needs a helper nonterminal -- it's already a single
-  # symbol. Everything else does, since a CFG production's RHS can only
-  # ever be a flat list of single symbols.
-  defp desugar_element(%IR.RuleRef{name: ref_name}, discard?, state) do
+  defp spliced_skip?(_ir, _skip), do: false
+
+  # A bare `RuleRef`, implicitly capturing itself unless excluded.
+  defp rule_ref(ref_name, discard?, state) do
     symbol = symbol_for(ref_name, state)
 
     capture =
@@ -177,6 +188,37 @@ defmodule Grammar.LRTable.Desugar do
         else: {0, ref_name, kind_for(ref_name, state)}
 
     {symbol, capture, state}
+  end
+
+  # A rule naming the `@skip` token outright: refused, since an LR or GLR
+  # parse never sees one (see `spliced_skip?/2`).
+  defp skip_named(%IR.RuleRef{name: name} = ir, state) do
+    {line, col} = position_of(ir)
+
+    error =
+      Error.new(
+        message:
+          "#{name} is this grammar's @skip token, which an @engine lr/glr parse drops from the stream -- a rule cannot name it",
+        stage: :analysis,
+        file: state.grammar.file,
+        line: line,
+        column: col,
+        source: state.grammar.source
+      )
+
+    {{:terminal, name}, nil, %{state | errors: [error | state.errors]}}
+  end
+
+  # ---- one grammar term -> one RHS symbol (+ optional capture entry) -----
+
+  # A bare (implicitly self-captured) or explicitly-captured direct
+  # `RuleRef` never needs a helper nonterminal -- it's already a single
+  # symbol. Everything else does, since a CFG production's RHS can only
+  # ever be a flat list of single symbols.
+  defp desugar_element(%IR.RuleRef{name: ref_name} = ir, discard?, state) do
+    if ref_name == state.grammar.skip,
+      do: skip_named(ir, state),
+      else: rule_ref(ref_name, discard?, state)
   end
 
   defp desugar_element(

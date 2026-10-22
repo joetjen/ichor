@@ -59,7 +59,7 @@ defmodule Grammar.Native.Lossless do
 
       defp lossless_match(input, context) do
         with {:ok, tokens} <- tokenize(input, context) do
-          unquote(stream) = tokens |> Grammar.Source.trimmed(unquote(skip)) |> List.to_tuple()
+          unquote(stream) = tokens |> Grammar.Source.significant(unquote(skip)) |> List.to_tuple()
 
           case unquote(run) do
             {:error, error} ->
@@ -68,6 +68,7 @@ defmodule Grammar.Native.Lossless do
             {:ok, pos, raw_captures} ->
               {raw_captures, record} = Ichor.Syntax.Record.root(unquote(root), pos, raw_captures)
               locator = Grammar.Source.Locator.new(unquote(stream), input)
+              record = Ichor.Syntax.Record.unskipped(record, tokens, unquote(skip))
               {:ok, Ichor.Syntax.tree(record, tokens, unquote(skip)), raw_captures, locator}
           end
         end

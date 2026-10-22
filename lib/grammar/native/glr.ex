@@ -108,7 +108,7 @@ defmodule Grammar.Native.GLR do
       # plain captures, as it always has.
       defp match(input, context) do
         with {:ok, tokens} <- tokenize(input, context) do
-          stream = tokens |> Grammar.Source.trimmed(unquote(grammar.skip)) |> List.to_tuple()
+          stream = tokens |> Grammar.Source.significant(unquote(grammar.skip)) |> List.to_tuple()
 
           case Runtime.run(
                  &glr_action/2,

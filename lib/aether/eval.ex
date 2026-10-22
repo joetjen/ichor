@@ -55,6 +55,7 @@ defmodule Aether.Eval do
       file: rg.file,
       case_insensitive: rg.case_insensitive,
       skip_mode: rg.skip_mode,
+      engine: rg.engine,
       predefined_overrides: Map.new(@predefined, &{&1, nil}),
       predefined_used_at: Map.new(@predefined, &{&1, nil}),
       tokens: %{},
@@ -313,12 +314,29 @@ defmodule Aether.Eval do
 
   defp convert_seq_terms(terms, context, state) do
     Result.map_ok(terms, state, fn {cst, suppress}, state ->
-      case convert(cst, context, state) do
-        {:ok, ir, state} -> {:ok, {ir, suppress}, state}
-        {:error, _} = err -> err
+      with :ok <- suppressible(cst, suppress, context, state),
+           {:ok, ir, state} <- convert(cst, context, state) do
+        {:ok, {ir, suppress}, state}
       end
     end)
   end
+
+  # `~` keeps the skip token out from before one element by not splicing
+  # it there. An LR or GLR parse drops skip tokens from the stream before
+  # it starts (`Grammar.Source.significant/2`), so there `~` could not
+  # keep anything out: refused, rather than quietly allowing what it says
+  # it forbids.
+  defp suppressible({:ref, _name, pos}, true, :rule, %{engine: engine, skip_mode: mode} = state)
+       when engine in [:lr, :glr] and mode != :none do
+    {:error,
+     err_at(
+       state,
+       pos,
+       "~ cannot keep the @skip token out under @engine #{engine}, which drops skip tokens from the stream before parsing -- use @engine peg, or @noskip and write the skip token out"
+     )}
+  end
+
+  defp suppressible(_cst, _suppress, _context, _state), do: :ok
 
   # Splicing itself can never fail (every term is already converted IR by
   # this point), so this returns a plain `{ir, state}` rather than the

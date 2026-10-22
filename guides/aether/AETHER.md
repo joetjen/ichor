@@ -142,6 +142,16 @@ Splicing also applies to the repeated body of `*`/`+`/`{n,m}` — `form*`
 tolerates whitespace *between* repetitions, not just around the whole
 group, since each repetition is itself another sequence element.
 
+Under `@engine lr` and `@engine glr` the skip token is not spliced: it
+is dropped from the token stream before parsing, which accepts the same
+input, since splicing only ever makes it optional. Spliced, an optional
+element between two others — `"[" WORD* "]"` — would leave two
+`SPACE*` side by side, and an LR table, deciding on one token of
+lookahead, could not tell which one a space belongs to. Two things
+follow: a rule there cannot name the skip token itself, and `~` is
+refused there, since it could not keep anything out. Use `@noskip`
+and write the whitespace out where it matters.
+
 ## Predefined tokens
 
 Five tokens exist in every grammar even if never declared:
