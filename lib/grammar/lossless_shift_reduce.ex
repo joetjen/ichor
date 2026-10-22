@@ -36,7 +36,7 @@ defmodule Grammar.LosslessShiftReduce do
           | {:error, Error.t()}
   def matched(grammar, table, input, context, run) do
     with {:ok, tokens} <- Grammar.VM.tokenize(grammar, input, context) do
-      stream = tokens |> Grammar.Source.trimmed(grammar.skip) |> List.to_tuple()
+      stream = tokens |> Grammar.Source.significant(grammar.skip) |> List.to_tuple()
       action_fn = fn state, term -> table.action |> Map.get(state, %{}) |> Map.get(term, []) end
       goto_fn = fn state, nonterm -> table.goto |> Map.get(state, %{}) |> Map.get(nonterm) end
 
@@ -54,7 +54,9 @@ defmodule Grammar.LosslessShiftReduce do
         {:ok, pos, raw_captures} ->
           {raw_captures, record} = Record.root(grammar.root, pos, raw_captures)
           locator = Grammar.Source.Locator.new(stream, input)
-          {:ok, Syntax.tree(record, tokens, grammar.skip), raw_captures, locator}
+
+          {:ok, Syntax.tree(Record.unskipped(record, tokens, grammar.skip), tokens, grammar.skip),
+           raw_captures, locator}
       end
     end
   end

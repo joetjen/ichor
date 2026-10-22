@@ -139,7 +139,7 @@ defmodule Grammar.Native.LR do
       # plain captures, as it always has.
       defp match(input, context) do
         with {:ok, tokens} <- tokenize(input, context) do
-          stream = tokens |> Grammar.Source.trimmed(unquote(grammar.skip)) |> List.to_tuple()
+          stream = tokens |> Grammar.Source.significant(unquote(grammar.skip)) |> List.to_tuple()
           initial_stack = [{unquote(start_state), 0, 0, nil}]
 
           case unquote(start_fn)(initial_stack, stream, 0, context) do
