@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Under `@engine lr` and `glr`, a capture over several tokens keeps
+  the whitespace inside it again**, as under PEG and before 0.7.2:
+  `all:(key:WORD "=" WORD)` on `a = b` is `"a = b"`, not `"a=b"`. The
+  fix is in `ichor_runtime` 0.6.3, which this version requires; tests
+  hold all three engines and both backends to the same capture text.
+
 ### Changed
 
 - **A generated tokenizer tries only the tokens that can begin with the
