@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A generated tokenizer tries only the tokens that can begin with the
+  next character.** Maximal munch tried every token at every position,
+  and most failed on the first character. Each token's start set is now
+  worked out when the parser is generated (`Grammar.FirstChars`): an
+  ASCII character picks its ready-made list of candidates with one
+  lookup, any other character asks each token that can begin beyond
+  ASCII. A token whose start set cannot be told exactly -- `.`, a
+  `@native(...)` token -- is always tried, so the same token wins as
+  before. Regenerate a checked-in parser to get it; on a 5.5 KB Dextrin
+  document, tokenizing takes 1.2 ms instead of 2.0 ms, decoding 3.5 ms
+  instead of 4.3 ms.
+
 ## [0.7.2] - 2026-10-23
 
 ### Fixed
