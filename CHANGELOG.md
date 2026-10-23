@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-23
+
+### Fixed
+
+- **`@engine lr` accepts an optional element between two others under
+  `@skip`**: `"[" WORD* "]"` was refused as a conflict on the skip
+  token, because the spliced `SPACE*` before and after an empty `WORD*`
+  stood side by side. Under `@engine lr` and `glr` the skip token is now
+  dropped from the stream before parsing instead of being spliced into
+  the rules, by both backends and in lossless mode, which keeps every
+  byte as before. The same input is accepted. A rule there naming the
+  skip token itself, and `~` there, are now refused with an error
+  saying why, rather than meaning something a parse cannot do.
+- **The install lines in the README and guides name the current
+  versions** (`ichor_runtime ~> 0.6.1`, `ichor ~> 0.7`); they still said
+  `~> 0.5` and `~> 0.6`.
+
 ## [0.7.1] - 2026-10-21
 
 ### Fixed

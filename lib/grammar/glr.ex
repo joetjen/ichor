@@ -152,7 +152,7 @@ defmodule Grammar.GLR do
 
   defp match(%__MODULE__{table: table}, grammar, input, context) do
     with {:ok, tokens} <- tokenize(grammar, input, context) do
-      stream = tokens |> Grammar.Source.trimmed(grammar.skip) |> List.to_tuple()
+      stream = tokens |> Grammar.Source.significant(grammar.skip) |> List.to_tuple()
       action_fn = fn state, term -> table.action |> Map.get(state, %{}) |> Map.get(term, []) end
       goto_fn = fn state, nonterm -> table.goto |> Map.get(state, %{}) |> Map.get(nonterm) end
 

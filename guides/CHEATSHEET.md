@@ -80,8 +80,8 @@ dependency:
 ```elixir
 def deps do
   [
-    {:ichor_runtime, "~> 0.5"},
-    {:ichor, "~> 0.6", only: :dev, runtime: false}
+    {:ichor_runtime, "~> 0.6.1"},
+    {:ichor, "~> 0.7", only: :dev, runtime: false}
   ]
 end
 ```
