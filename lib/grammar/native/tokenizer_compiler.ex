@@ -59,12 +59,8 @@ defmodule Grammar.Native.TokenizerCompiler do
         end
       end)
 
-    lex_candidates_def =
-      quote do
-        defp lex_candidates(unquote(input), unquote(context)) do
-          unquote(candidates)
-        end
-      end
+    starts = Enum.map(lexable, &Grammar.FirstChars.of(grammar.tokens, &1))
+    lex_candidates_defs = lex_candidates_def(candidates, starts, input, context)
 
     tokenize_def =
       quote do
@@ -79,8 +75,128 @@ defmodule Grammar.Native.TokenizerCompiler do
         end
       end
 
-    {char_defs ++ [lex_candidates_def], tokenize_def}
+    {char_defs ++ lex_candidates_defs, tokenize_def}
   end
+
+  # `lex_candidates/2`: the candidates maximal munch tries at the start of
+  # `input`. Only those whose start set (`Grammar.FirstChars`) holds the
+  # next character are built at all; a token whose start set is `:any` is
+  # always tried. Candidates stay in declaration order, which breaks ties
+  # between equally long matches.
+  #
+  # An ASCII character -- nearly every one in most inputs -- costs one
+  # lookup: the 128 of them are sorted, here, into groups with the same
+  # candidates, and `lex_ascii_group/1` (one clause per character, which
+  # the compiler turns into a jump table) names the group. Any other
+  # character asks each candidate's start set in turn. At the end of the
+  # input every candidate is handed over, as before -- the tokenizer stops
+  # there without trying any.
+  defp lex_candidates_def(candidates, starts, input, context) do
+    pairs = Enum.zip(candidates, starts)
+
+    ascii =
+      for code <- 0..127 do
+        for {candidate, start} <- pairs, starts_with?(start, code), do: candidate
+      end
+
+    groups = ascii |> Enum.uniq() |> Enum.with_index()
+    group_of = Map.new(groups)
+    char = Macro.var(:char, nil)
+
+    group_clauses =
+      ascii
+      |> Enum.with_index()
+      |> Enum.map(fn {list, code} ->
+        quote do
+          defp lex_ascii_group(unquote(code)), do: unquote(Map.fetch!(group_of, list))
+        end
+      end)
+
+    group_arms =
+      Enum.flat_map(groups, fn {list, id} ->
+        quote do
+          unquote(id) -> unquote(list)
+        end
+      end)
+
+    # A grammar none of whose tokens can begin beyond ASCII never looks at
+    # such a character: it is bound as `_`, so no unused variable is left.
+    {beyond, asks?} = beyond_ascii(pairs, char)
+    wide_char = if asks?, do: char, else: Macro.var(:_, nil)
+
+    lex_candidates =
+      quote do
+        defp lex_candidates(unquote(input), unquote(context)) do
+          case unquote(input) do
+            <<unquote(char)::utf8, _::binary>> when unquote(char) < 128 ->
+              case lex_ascii_group(unquote(char)) do
+                unquote(group_arms)
+              end
+
+            <<unquote(wide_char)::utf8, _::binary>> ->
+              unquote(beyond)
+
+            _ ->
+              unquote(candidates)
+          end
+        end
+      end
+
+    [lex_candidates | group_clauses]
+  end
+
+  defp starts_with?(:any, _code), do: true
+
+  defp starts_with?({:ranges, ranges}, code),
+    do: Enum.any?(ranges, fn {lo, hi} -> code in lo..hi end)
+
+  # The candidates for a character beyond ASCII: those whose start set
+  # reaches past it, each asked in turn, consed from the last to the
+  # first so the list keeps declaration order. Also whether any of them
+  # asks, i.e. whether the code looks at `char` at all.
+  defp beyond_ascii(pairs, char) do
+    acc = Macro.var(:acc, nil)
+
+    steps =
+      pairs
+      |> Enum.reverse()
+      |> Enum.flat_map(fn
+        {candidate, :any} ->
+          [quote(do: unquote(acc) = [unquote(candidate) | unquote(acc)])]
+
+        {candidate, {:ranges, ranges}} ->
+          case Enum.filter(ranges, fn {_lo, hi} -> hi >= 128 end) do
+            [] ->
+              []
+
+            wide ->
+              class = Macro.escape(Grammar.Native.Runtime.Tokenizer.char_class(wide))
+
+              [
+                quote do
+                  unquote(acc) =
+                    if Tokenizer.in_class?(unquote(char), unquote(class)),
+                      do: [unquote(candidate) | unquote(acc)],
+                      else: unquote(acc)
+                end
+              ]
+          end
+      end)
+
+    asks? = Enum.any?(pairs, fn {_candidate, start} -> wide?(start) end)
+
+    code =
+      quote do
+        unquote(acc) = []
+        unquote_splicing(steps)
+        unquote(acc)
+      end
+
+    {code, asks?}
+  end
+
+  defp wide?(:any), do: false
+  defp wide?({:ranges, ranges}), do: Enum.any?(ranges, fn {_lo, hi} -> hi >= 128 end)
 
   @doc """
   Does `grammar` have any token-position `@native(...)`
