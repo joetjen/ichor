@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A rule named `nil` under `@engine lr` or `glr` with `@noskip` is
+  accepted again.** 0.7.3 refuses a rule that names the grammar's skip
+  token, and under `@noskip` there is none -- `nil`, which is also what
+  a rule named `nil` is called -- so it refused that rule with an empty
+  name in the message. Found by the conformance suite's ownership cases.
+
 ## [0.7.3] - 2026-10-23
 
 ### Fixed

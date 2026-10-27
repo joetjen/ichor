@@ -216,7 +216,9 @@ defmodule Grammar.LRTable.Desugar do
   # symbol. Everything else does, since a CFG production's RHS can only
   # ever be a flat list of single symbols.
   defp desugar_element(%IR.RuleRef{name: ref_name} = ir, discard?, state) do
-    if ref_name == state.grammar.skip,
+    # A grammar under `@noskip` has no skip token (`nil`), and a rule
+    # named `nil` must not be taken for it.
+    if state.grammar.skip != nil and ref_name == state.grammar.skip,
       do: skip_named(ir, state),
       else: rule_ref(ref_name, discard?, state)
   end

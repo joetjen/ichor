@@ -95,6 +95,27 @@ defmodule Grammar.LRSkipTest do
     end
   end
 
+  # Under `@noskip` there is no skip token, and a rule named `nil` is
+  # the atom `nil` too: 0.7.3 took the one for the other and refused it.
+  for engine <- [:lr, :glr] do
+    test "a rule named nil under @noskip is a rule like any other, under @engine #{engine}" do
+      source = ~s"""
+      @grammar "owned"
+      @root r
+      @engine #{unquote(engine)}
+      @noskip
+      A := "a"
+      r := x:nil?
+      nil := A
+      """
+
+      {:ok, grammar} = Aether.Parser.parse(source, nil)
+      {:ok, analysed} = Grammar.Analysis.run(grammar)
+      backend = %{lr: Grammar.LR, glr: Grammar.GLR}[unquote(engine)]
+      assert {:ok, _} = backend.run(analysed, "a", Support.NoActions)
+    end
+  end
+
   test "a rule naming the skip token itself is refused, saying why" do
     source = ~S"""
     @grammar "spaced"
