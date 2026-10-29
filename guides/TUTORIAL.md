@@ -83,6 +83,11 @@ matches the root rule (returning how many tokens were consumed), nothing
 more. There's no evaluation yet, because we haven't told Ichor what a
 match should *mean*.
 
+A generated parser also has `match/2`, which is `parse/2` keeping where
+each capture matched: `{:ok, pos, raw_captures, locator}`, the locator
+turning those positions into lines and columns. Reach for it when you
+want spans and no actions.
+
 ## 3. Tokens vs. rules
 
 Aether has exactly one syntactic rule that decides whether something is a

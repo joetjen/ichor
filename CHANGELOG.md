@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Every generated parser offers `match/1,2`**, under every engine:
+  `{:ok, pos, raw_captures, locator}`, the match `parse/2` and `run/2`
+  share, with the positions `Ichor.Capture.at/3` reads and the
+  `Grammar.Source.Locator` that turns them into spans -- for a caller
+  that wants spans without actions. It was private. As the Praxis
+  port's, which has it already.
+
 ### Fixed
 
 - **A rule named `nil` under `@engine lr` or `glr` with `@noskip` is

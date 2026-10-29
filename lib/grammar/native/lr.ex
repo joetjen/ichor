@@ -133,11 +133,11 @@ defmodule Grammar.Native.LR do
         end
       end
 
-      # The match `parse/2` and `run/2` share: the raw captures with the
-      # positions the reductions recorded (`Ichor.Capture.at/3`), and the
-      # locator that turns them into spans. `parse/2` hands its caller
-      # plain captures, as it always has.
-      defp match(input, context) do
+      @doc "Matches `input` as `parse/2` does, keeping where each capture matched: `{:ok, pos, raw_captures, locator}` -- the captures raw, with the positions `Ichor.Capture.at/3` reads, and the `Grammar.Source.Locator` that turns them into spans -- or the error `parse/2` answers. For a caller that wants spans without actions; `run/2` evaluates the same match."
+      @spec match(String.t(), term()) ::
+              {:ok, non_neg_integer(), Ichor.Capture.raw_captures(), Grammar.Source.Locator.t()}
+              | {:error, Ichor.Error.t()}
+      def match(input, context \\ nil) do
         with {:ok, tokens} <- tokenize(input, context) do
           stream = tokens |> Grammar.Source.significant(unquote(grammar.skip)) |> List.to_tuple()
           initial_stack = [{unquote(start_state), 0, 0, nil}]

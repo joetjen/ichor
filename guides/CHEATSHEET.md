@@ -38,9 +38,15 @@ mix ichor.gen PATH_TO_GRAMMAR --module MODULE --actions ACTIONS_MODULE --out PAT
 
 Same pipeline as `use Ichor`, run once from the command line instead of
 inside a macro expansion on every compile — writes a plain, ordinary
-`MODULE` to `PATH`, with the exact same `tokenize/1`/`parse/1`/`run/1,2`
+`MODULE` to `PATH`, with the exact same `tokenize/1`/`match/1,2`/`parse/1`/`run/1,2`
 functions `use Ichor` would generate. Rerun by hand whenever the grammar
 changes; no automatic staleness check.
+
+`match/1,2` is the match `parse` and `run` share, kept whole:
+`{:ok, pos, raw_captures, locator}` -- the captures with the positions
+`Ichor.Capture.at/3` reads, and the `Grammar.Source.Locator` that turns
+them into spans. For spans without actions: a formatter, a linter, an
+editor.
 
 Add `--lossless` (`lossless: true` for `use Ichor`) for
 `parse_lossless/1,2` and `run_lossless/1,2` too: the lossless tree of an
