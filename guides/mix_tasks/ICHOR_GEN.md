@@ -49,7 +49,7 @@ private helper functions the codegen backend needed, all emitted as
 
 defmodule Calculator do
   @moduledoc false
-  # tokenize/1, parse/1, run/1, run/2, ...
+  # tokenize/1, match/1, match/2, parse/1, run/1, run/2, ...
 end
 
 Calculator.run("2 + 3 * 4")
